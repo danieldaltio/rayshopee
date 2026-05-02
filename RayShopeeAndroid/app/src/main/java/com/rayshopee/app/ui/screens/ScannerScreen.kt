@@ -1,6 +1,9 @@
 package com.rayshopee.app.ui.screens
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,9 +14,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -37,6 +42,10 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Executors
+import androidx.compose.material3.ExperimentalMaterial3Api
+
+// Cloudflare Quick Tunnel URL - Update this when creating new tunnel
+private const val TUNNEL_BASE_URL = "http://64.181.161.232:3003"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -169,12 +178,37 @@ fun ScannerScreen() {
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
-                    errorText?.let { 
+                    errorText?.let { error ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                         ) {
-                            Text(it, modifier = Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    error,
+                                    modifier = Modifier.weight(1f),
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Button(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clip = ClipData.newPlainText("Error", error)
+                                        clipboard.setPrimaryClip(clip)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.error
+                                    ),
+                                    modifier = Modifier.padding(start = 8.dp)
+                                ) {
+                                    Text("Copiar")
+                                }
+                            }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -408,7 +442,7 @@ fun VariationEditor(
 suspend fun updatePriceStockCost(itemId: String, variationId: String, price: Double, stock: Int, cost: Double) = withContext(Dispatchers.IO) {
     try {
         // Update stock
-        val stockUrl = "http://192.168.15.7:3003/api/products/update-stock"
+        val stockUrl = "$TUNNEL_BASE_URL/api/products/update-stock"
         val stockJson = """{"itemId":"$itemId","variationId":"$variationId","stock":$stock}"""
         val stockConn = java.net.URL(stockUrl).openConnection() as java.net.HttpURLConnection
         stockConn.requestMethod = "POST"
@@ -425,7 +459,7 @@ suspend fun updatePriceStockCost(itemId: String, variationId: String, price: Dou
         // Update cost if provided
         if (cost > 0) {
             val modelId = variationId.toIntOrNull() ?: 0
-            val costUrl = "http://192.168.15.7:3003/api/products/update-cost"
+            val costUrl = "$TUNNEL_BASE_URL/api/products/update-cost"
             val costJson = """{"item_id":"$itemId","model_id":$modelId,"cost":$cost}"""
             val costConn = java.net.URL(costUrl).openConnection() as java.net.HttpURLConnection
             costConn.requestMethod = "POST"
@@ -440,24 +474,35 @@ suspend fun updatePriceStockCost(itemId: String, variationId: String, price: Dou
             }
         }
     } catch (e: Exception) {
-        throw Exception("Falha ao atualizar: ${e.message}")
+        throw Exception("Erro atualizar: ${e.message}")
     }
 }
 
 suspend fun searchItemById(itemId: String): String = withContext(Dispatchers.IO) {
     try {
-        val barcodeUrl = "http://192.168.15.7:3003/api/products/barcode?barcode=$itemId"
-        val barcodeResponse = java.net.URL(barcodeUrl).openConnection().apply { connectTimeout = 5000 }
-        val barcodeCode = (barcodeResponse as java.net.HttpURLConnection).responseCode
+        val barcodeUrl = "$TUNNEL_BASE_URL/api/products/barcode?barcode=$itemId"
+        val barcodeConn = java.net.URL(barcodeUrl).openConnection() as java.net.HttpURLConnection
+        barcodeConn.connectTimeout = 10000
+        barcodeConn.setRequestProperty("bypass-tunnel-reminder", "true")
+        barcodeConn.setRequestProperty("User-Agent", "RayShopeeApp/1.0")
+        val barcodeCode = barcodeConn.responseCode
         if (barcodeCode == 200) {
-            return@withContext barcodeResponse.inputStream.bufferedReader().readText()
+            return@withContext barcodeConn.inputStream.bufferedReader().readText()
         }
         
-        val url = "http://192.168.15.7:3003/api/products/item/$itemId"
-        val response = java.net.URL(url).openConnection().getInputStream().bufferedReader().readText()
-        response
+        val url = "$TUNNEL_BASE_URL/api/products/item/$itemId"
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.connectTimeout = 10000
+        conn.setRequestProperty("bypass-tunnel-reminder", "true")
+        conn.setRequestProperty("User-Agent", "RayShopeeApp/1.0")
+        val code = conn.responseCode
+        if (code != 200) {
+            val errorBody = conn.errorStream?.bufferedReader()?.readText() ?: "No response"
+            throw Exception("HTTP $code - $errorBody")
+        }
+        conn.inputStream.bufferedReader().readText()
     } catch (e: Exception) {
-        throw Exception("Falha: ${e.message}")
+        throw Exception("Erro API: ${e.message}")
     }
 }
 

@@ -5,6 +5,7 @@ import com.rayshopee.app.data.model.ProductVariation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
+import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -17,6 +18,12 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
+
+// Backup URLs para fallback
+private val FALLBACK_URLS = listOf(
+    "https://rayshopee.loca.lt",
+    "https://rayshopee-dev.loca.lt"
+)
 
 interface ShopeeApi {
     @GET("/api/products/barcode")
@@ -67,26 +74,58 @@ data class UpdateStockRequest(
 @Singleton
 class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     
+    companion object {
+        // Configure this URL for external access
+        private const val BASE_URL = "http://64.181.161.232:3003"
+    }
+    
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
     }
     
-    private val api: ShopeeApi = Retrofit.Builder()
-        .baseUrl("http://192.168.15.7:3003")
-        .client(OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY
-            })
-            .build())
+    private val bypassHeaders = { chain: okhttp3.Interceptor.Chain ->
+        val request = chain.request().newBuilder()
+            .build()
+        chain.proceed(request)
+    }
+    
+    private fun createClient(): OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor(bypassHeaders)
+        .addInterceptor(HttpLoggingInterceptor().apply {
+            level = HttpLoggingInterceptor.Level.BASIC
+        })
+        .retryOnConnectionFailure(true)
+        .build()
+    
+    private fun createApi(baseUrl: String): ShopeeApi = Retrofit.Builder()
+        .baseUrl(baseUrl)
+        .client(createClient())
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
         .create(ShopeeApi::class.java)
-
-    override suspend fun searchByBarcode(barcode: String): Result<Product> {
-        return try {
+    
+    private var api: ShopeeApi = createApi(BASE_URL)
+    
+    private suspend fun <T> withRetry(block: suspend () -> T): T {
+        var lastError: Exception? = null
+        repeat(3) { attempt ->
+            try {
+                return block()
+            } catch (e: Exception) {
+                lastError = e
+                if (attempt < 2) {
+                    kotlinx.coroutines.delay(2000L * (attempt + 1))
+                }
+            }
+        }
+        throw lastError ?: Exception("Unknown error")
+    }
+    
+    override suspend fun searchByBarcode(barcode: String): Result<Product> = withRetry {
+        try {
             val response = api.searchByBarcode(barcode)
             val product = Product(
                 itemId = response.itemId,
