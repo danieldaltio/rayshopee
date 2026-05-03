@@ -21,66 +21,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const {
-  SHOPEE_PARTNER_ID,
-  SHOPEE_PARTNER_KEY,
-  SHOPEE_API_URL = 'https://partner.shopeemobile.com',
-  PORT = 3001,
-  HTTPS_PORT = 3443,
-  AUTH_DOMAIN = 'rayshopee.localhost',
-  SUPABASE_URL,
-  SUPABASE_KEY,
-} = process.env;
+// Debug middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
 
-// Initialize Supabase Client
-const supabase = (SUPABASE_URL && SUPABASE_KEY) 
-  ? createClient(SUPABASE_URL, SUPABASE_KEY) 
-  : null;
-
-let shopId = process.env.SHOPEE_SHOP_ID || '';
-
-// ============================================================
-//  TOKEN MANAGEMENT — Auto-refresh when expired
-// ============================================================
-
-let accessToken = process.env.SHOPEE_ACCESS_TOKEN || '';
-let refreshToken = process.env.SHOPEE_REFRESH_TOKEN || '';
-let tokenExpiresAt = Date.now() + 4 * 60 * 60 * 1000; // Assume 4h from startup
-let isRefreshing = false;
-
-/**
- * Generate HMAC-SHA256 sign for auth endpoints (no access_token/shop_id in base string)
- */
-function generateAuthSign(apiPath, timestamp) {
-  const baseString = `${SHOPEE_PARTNER_ID}${apiPath}${timestamp}`;
-  return crypto.createHmac('sha256', SHOPEE_PARTNER_KEY).update(baseString).digest('hex');
-}
-
-/**
- * Refresh the access token using the refresh token
- */
-async function refreshAccessToken() {
-  if (isRefreshing) return;
-  isRefreshing = true;
-
-  const apiPath = '/api/v2/auth/access_token/get';
-  const timestamp = Math.floor(Date.now() / 1000);
-  const sign = generateAuthSign(apiPath, timestamp);
-
-  const url = `${SHOPEE_API_URL}${apiPath}?partner_id=${SHOPEE_PARTNER_ID}&timestamp=${timestamp}&sign=${sign}`;
-
-  console.log('  🔄 Refreshing access token...');
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        shop_id: parseInt(shopId),
-        refresh_token: refreshToken,
-        partner_id: parseInt(SHOPEE_PARTNER_ID),
-      }),
-    });
+// Root endpoint
+app.get('/', (_req, res) => {
+  res.json({ ok: true, message: 'RayShopee API running' });
+});
 
     const data = await res.json();
 
