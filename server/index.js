@@ -21,16 +21,71 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Debug middleware
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
-  next();
-});
-
 // Root endpoint
 app.get('/', (_req, res) => {
   res.json({ ok: true, message: 'RayShopee API running' });
 });
+
+const {
+  SHOPEE_PARTNER_ID,
+  SHOPEE_PARTNER_KEY,
+  SHOPEE_API_URL = 'https://partner.shopeemobile.com',
+  PORT = 3001,
+  HTTPS_PORT = 3443,
+  AUTH_DOMAIN = 'rayshopee.localhost',
+  SUPABASE_URL,
+  SUPABASE_KEY,
+} = process.env;
+
+// Initialize Supabase Client
+const supabase = (SUPABASE_URL && SUPABASE_KEY) 
+  ? createClient(SUPABASE_URL, SUPABASE_KEY) 
+  : null;
+
+let shopId = process.env.SHOPEE_SHOP_ID || '';
+
+// ============================================================
+//  TOKEN MANAGEMENT — Auto-refresh when expired
+// ============================================================
+
+let accessToken = process.env.SHOPEE_ACCESS_TOKEN || '';
+let refreshToken = process.env.SHOPEE_REFRESH_TOKEN || '';
+let tokenExpiresAt = Date.now() + 4 * 60 * 60 * 1000; // Assume 4h from startup
+let isRefreshing = false;
+
+/**
+ * Generate HMAC-SHA256 sign for auth endpoints (no access_token/shop_id in base string)
+ */
+function generateAuthSign(apiPath, timestamp) {
+  const baseString = `${SHOPEE_PARTNER_ID}${apiPath}${timestamp}`;
+  return crypto.createHmac('sha256', SHOPEE_PARTNER_KEY).update(baseString).digest('hex');
+}
+
+/**
+ * Refresh the access token using the refresh token
+ */
+async function refreshAccessToken() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+
+  const apiPath = '/api/v2/auth/access_token/get';
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sign = generateAuthSign(apiPath, timestamp);
+
+  const url = `${SHOPEE_API_URL}${apiPath}?partner_id=${SHOPEE_PARTNER_ID}&timestamp=${timestamp}&sign=${sign}`;
+
+  console.log('  🔄 Refreshing access token...');
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shop_id: parseInt(shopId),
+        refresh_token: refreshToken,
+        partner_id: parseInt(SHOPEE_PARTNER_ID),
+      }),
+    });
 
     const data = await res.json();
 
@@ -47,7 +102,6 @@ app.get('/', (_req, res) => {
 
     // Persist to .env file
     try {
-      if (!ENV_PATH) throw new Error('.env not found');
       let envContent = fs.readFileSync(ENV_PATH, 'utf-8');
       envContent = envContent.replace(
         /SHOPEE_ACCESS_TOKEN=.*/,
@@ -274,7 +328,6 @@ app.post('/api/auth/refresh', async (_req, res) => {
  */
 function persistToEnv(updates) {
   try {
-    if (!ENV_PATH) return;
     let envContent = fs.readFileSync(ENV_PATH, 'utf-8');
     for (const [key, value] of Object.entries(updates)) {
       const regex = new RegExp(`^${key}=.*$`, 'm');
@@ -1608,11 +1661,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  📦  Shop ID: ${shopId || '⚠️  NÃO CONFIGURADO'}`);
   console.log(`  🔑  Auth: ${accessToken ? '✅ Configurado' : '❌ Faltando'}`);
   console.log(`  🔄  Refresh: ${refreshToken ? '✅ Ativo' : '❌ Sem refresh token'}\n`);
-});
 
-// Root endpoint
-app.get('/', (_req, res) => {
-  res.json({ ok: true, message: 'RayShopee API running' });
+  // Try initial token refresh on startup
+  if (SHOPEE_PARTNER_ID && SHOPEE_PARTNER_KEY && refreshToken) {
+    refreshAccessToken().catch(() => {});
+  }
 });
 
 // Add product with GTIN manually
