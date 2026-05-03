@@ -23,7 +23,7 @@ const {
   SHOPEE_PARTNER_ID,
   SHOPEE_PARTNER_KEY,
   SHOPEE_API_URL = 'https://partner.shopeemobile.com',
-  PORT = 3001,
+  PORT = process.env.PORT || 3000,
   HTTPS_PORT = 3443,
   AUTH_DOMAIN = 'rayshopee.localhost',
   SUPABASE_URL,
