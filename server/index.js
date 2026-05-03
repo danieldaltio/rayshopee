@@ -9,13 +9,6 @@ import selfsigned from 'selfsigned';
 import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-let ENV_PATH;
-try {
-  ENV_PATH = path.join(__dirname, '..', '.env');
-  fs.accessSync(ENV_PATH);
-} catch {
-  ENV_PATH = null;
-}
 
 const app = express();
 app.use(cors());
@@ -23,7 +16,7 @@ app.use(express.json());
 
 // Root endpoint
 app.get('/', (_req, res) => {
-  res.json({ ok: true, message: 'RayShopee API running' });
+  res.json({ ok: true });
 });
 
 const {
