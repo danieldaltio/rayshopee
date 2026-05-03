@@ -1654,6 +1654,7 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
 
 // HTTP server
 const port = parseInt(process.env.PORT) || 3000;
+console.log(`Starting server on port ${port}...`);
 app.listen(port, '0.0.0.0', () => {
   console.log(`Server started on port ${port}`);
   console.log(`  ─────────────────────`);
