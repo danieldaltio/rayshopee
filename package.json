@@ -4,6 +4,7 @@
   "description": "Shopee Price & Stock Manager — Local Dashboard",
   "type": "module",
   "scripts": {
+    "start": "node server/index.js",
     "dev": "concurrently -k -n \"SERVER,VITE\" -c \"cyan,magenta\" \"node server/index.js\" \"vite\"",
     "dev:server": "node server/index.js",
     "dev:client": "vite",
