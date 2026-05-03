@@ -1652,9 +1652,10 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
 //  START SERVERS (HTTP + HTTPS)
 // ============================================================
 
-// HTTP server (for Vite proxy and normal API calls)
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  🛒  RayShopee Server`);
+// HTTP server
+const port = parseInt(process.env.PORT) || 3000;
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server started on port ${port}`);
   console.log(`  ─────────────────────`);
   console.log(`  🌐  HTTP:  http://localhost:${PORT}`);
   console.log(`  🔒  HTTPS: https://${AUTH_DOMAIN}:${HTTPS_PORT}`);
