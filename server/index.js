@@ -14,9 +14,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Root endpoint
-app.get('/', (_req, res) => {
-  res.json({ ok: true });
+// Root
+app.get('/', (_req, res) => res.json({ ok: true, msg: 'root' }));
+
+// Health
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// Catch-all for debugging
+app.use((req, res) => {
+  console.log(`404: ${req.method} ${req.path}`);
+  res.status(404).json({ error: 'not found', path: req.path });
 });
 
 const {
