@@ -44,8 +44,8 @@ import org.json.JSONObject
 import java.util.concurrent.Executors
 import androidx.compose.material3.ExperimentalMaterial3Api
 
-// Cloudflare Quick Tunnel URL - Update this when creating new tunnel
-private const val TUNNEL_BASE_URL = "http://64.181.161.232:3003"
+// Back4app production URL
+private const val TUNNEL_BASE_URL = "https://rayshopeeapi-0ts7mvyr.b4a.run"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

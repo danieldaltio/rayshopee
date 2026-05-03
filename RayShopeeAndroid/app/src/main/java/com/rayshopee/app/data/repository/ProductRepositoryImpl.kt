@@ -75,8 +75,8 @@ data class UpdateStockRequest(
 class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     
     companion object {
-        // Configure this URL for external access
-        private const val BASE_URL = "http://64.181.161.232:3003"
+        // Back4app production URL
+        private const val BASE_URL = "https://rayshopeeapi-0ts7mvyr.b4a.run"
     }
     
     private val json = Json {
