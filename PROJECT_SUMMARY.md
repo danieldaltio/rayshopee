@@ -1,5 +1,12 @@
 # RayShopee - Resumo Completo do Projeto
 
+**⚠️ STATUS ATUAL (2026-05-02):**
+- Oracle Cloud: **PROBLEMA DE REDE** - VM inacessível externamente
+- Backend funcionando localmente
+- App Android buildado e pronto
+
+---
+
 ## 📋 Visão Geral
 
 **RayShopee** é um sistema de gestão de estoque e preços para vendedores Shopee com:
