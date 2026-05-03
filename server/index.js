@@ -1651,11 +1651,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  📦  Shop ID: ${shopId || '⚠️  NÃO CONFIGURADO'}`);
   console.log(`  🔑  Auth: ${accessToken ? '✅ Configurado' : '❌ Faltando'}`);
   console.log(`  🔄  Refresh: ${refreshToken ? '✅ Ativo' : '❌ Sem refresh token'}\n`);
+});
 
-  // Try initial token refresh on startup
-  if (SHOPEE_PARTNER_ID && SHOPEE_PARTNER_KEY && refreshToken) {
-    refreshAccessToken().catch(() => {});
-  }
+// Root endpoint
+app.get('/', (_req, res) => {
+  res.json({ ok: true, message: 'RayShopee API running' });
 });
 
 // Add product with GTIN manually
