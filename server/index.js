@@ -10,7 +10,13 @@ import selfsigned from 'selfsigned';
 import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ENV_PATH = path.join(__dirname, '..', '.env');
+let ENV_PATH;
+try {
+  ENV_PATH = path.join(__dirname, '..', '.env');
+  fs.accessSync(ENV_PATH);
+} catch {
+  ENV_PATH = null;
+}
 
 const app = express();
 app.use(cors());
@@ -92,6 +98,7 @@ async function refreshAccessToken() {
 
     // Persist to .env file
     try {
+      if (!ENV_PATH) throw new Error('.env not found');
       let envContent = fs.readFileSync(ENV_PATH, 'utf-8');
       envContent = envContent.replace(
         /SHOPEE_ACCESS_TOKEN=.*/,
@@ -318,6 +325,7 @@ app.post('/api/auth/refresh', async (_req, res) => {
  */
 function persistToEnv(updates) {
   try {
+    if (!ENV_PATH) return;
     let envContent = fs.readFileSync(ENV_PATH, 'utf-8');
     for (const [key, value] of Object.entries(updates)) {
       const regex = new RegExp(`^${key}=.*$`, 'm');
