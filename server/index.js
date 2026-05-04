@@ -16,14 +16,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+console.log('Starting express app...');
+
 // Root
-app.get('/', (_req, res) => res.json({ ok: true, msg: 'root' }));
+app.get('/', (_req, res) => {
+  console.log('GET /');
+  res.json({ ok: true, msg: 'root' });
+});
 
 // Health
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/health', (_req, res) => {
+  console.log('GET /api/health');
+  res.json({ ok: true });
+});
 
 // Wake up endpoint (to prevent cold start)
-app.get('/api/wakeup', (_req, res) => res.json({ ok: true, warmup: true }));
+app.get('/api/wakeup', (_req, res) => {
+  console.log('GET /api/wakeup');
+  res.json({ ok: true, warmup: true });
+});
 
 const {
   SHOPEE_PARTNER_ID,
