@@ -13,10 +13,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
 
 const app = express();
+console.log('Express version:', express.version);
 app.use(cors());
 app.use(express.json());
 
 console.log('Starting express app...');
+console.log('Routes defined:', '/', '/api/health', '/api/wakeup');
 
 // Root
 app.get('/', (_req, res) => {
