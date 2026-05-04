@@ -22,6 +22,9 @@ app.get('/', (_req, res) => res.json({ ok: true, msg: 'root' }));
 // Health
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+// Wake up endpoint (to prevent cold start)
+app.get('/api/wakeup', (_req, res) => res.json({ ok: true, warmup: true }));
+
 const {
   SHOPEE_PARTNER_ID,
   SHOPEE_PARTNER_KEY,

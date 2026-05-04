@@ -26,6 +26,9 @@ private val FALLBACK_URLS = listOf(
 )
 
 interface ShopeeApi {
+    @GET("/api/wakeup")
+    suspend fun wakeUp()
+    
     @GET("/api/products/barcode")
     suspend fun searchByBarcode(@Query("barcode") barcode: String): ProductResponse
     
@@ -76,7 +79,7 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     
     companion object {
         // Back4app production URL
-        private const val BASE_URL = "https://rayshopeeapi-0ts7mvyr.b4a.run"
+        private const val BASE_URL = "https://rayshopeeapi-8ivucqzy.b4a.run"
     }
     
     private val json = Json {
@@ -109,6 +112,12 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     
     private var api: ShopeeApi = createApi(BASE_URL)
     
+    private suspend fun warmUp() {
+        try {
+            api.wakeUp()
+        } catch (_: Exception) {}
+    }
+    
     private suspend fun <T> withRetry(block: suspend () -> T): T {
         var lastError: Exception? = null
         repeat(3) { attempt ->
@@ -125,6 +134,7 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     }
     
     override suspend fun searchByBarcode(barcode: String): Result<Product> = withRetry {
+        warmUp()
         try {
             val response = api.searchByBarcode(barcode)
             val product = Product(

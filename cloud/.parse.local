@@ -1,0 +1,10 @@
+{
+  "applications": {
+    "_default": {
+      "link": "rayshopee"
+    },
+    "rayshopee": {
+      "applicationId": "crDkQt87kz4UIKhqNsKcFG6Dh5E3dvwfcmjIqpxE"
+    }
+  }
+}
