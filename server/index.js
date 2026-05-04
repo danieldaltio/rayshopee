@@ -10,6 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -19,12 +21,6 @@ app.get('/', (_req, res) => res.json({ ok: true, msg: 'root' }));
 
 // Health
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-
-// Catch-all for debugging
-app.use((req, res) => {
-  console.log(`404: ${req.method} ${req.path}`);
-  res.status(404).json({ error: 'not found', path: req.path });
-});
 
 const {
   SHOPEE_PARTNER_ID,
@@ -1651,6 +1647,12 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
 // ============================================================
 //  START SERVERS (HTTP + HTTPS)
 // ============================================================
+
+// Catch-all for debugging (must be before listen)
+app.use((req, res) => {
+  console.log(`404: ${req.method} ${req.path}`);
+  res.status(404).json({ error: 'not found', path: req.path });
+});
 
 // HTTP server
 const port = parseInt(process.env.PORT) || 3000;
