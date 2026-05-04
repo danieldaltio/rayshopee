@@ -1,0 +1,23 @@
+name: Keep Back4app Alive
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # a cada 4 horas
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+          sparse-checkout-cone-mode: false
+      
+      - name: Empty commit to trigger deploy
+        run: |
+          git config --local user.email "deploy@github.com"
+          git config --local user.name "Deploy Bot"
+          git commit --allow-empty -m "ci: trigger back4app deploy"
+          git push

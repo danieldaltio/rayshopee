@@ -1,0 +1,17 @@
+name: Redeploy to Back4app
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */4 * * *'  # a cada 4 horas
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Trigger Back4app Redeploy
+        run: |
+          curl -X POST "https://containers.back4app.com/apps/319e83b0-e8e9-4056-9c72-1b81dc5c66e4/deployments" \
+            -H "Authorization: Bearer ${{ secrets.BACK4APP_TOKEN }}"
