@@ -1,0 +1,14 @@
+name: Keep Back4app Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'  # a cada 10 minutos
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake up Back4app
+        run: |
+          curl -s "https://rayshopeeapi-8ivucqzy.b4a.run/api/wakeup" || true
