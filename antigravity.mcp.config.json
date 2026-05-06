@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "openmemory": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "run_mcp_server.py"
+      ],
+      "cwd": "C:/Ubuntu/root/Projeto-OpenClaw-Docker/RayShopee",
+      "env": {
+        "OM_DB_URL": "sqlite:///RayShopeeAndroid/.memory/openmemory.sqlite",
+        "OM_DEFAULT_USER": "antigravity",
+        "OM_TIER": "smart",
+        "OM_EMBEDDING_PROVIDER": "synthetic"
+      }
+    }
+  }
+}

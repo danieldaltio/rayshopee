@@ -8,14 +8,21 @@ import { fileURLToPath } from 'url';
 import selfsigned from 'selfsigned';
 import { createClient } from '@supabase/supabase-js';
 
+import dotenv from 'dotenv';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
+dotenv.config({ path: ENV_PATH });
 
 const app = express();
 console.log('Express version:', express.version);
 app.use(cors());
 app.use(express.json());
+
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.url}`);
+  next();
+});
 
 console.log('Starting express app...');
 console.log('Routes defined:', '/', '/api/health', '/api/wakeup');

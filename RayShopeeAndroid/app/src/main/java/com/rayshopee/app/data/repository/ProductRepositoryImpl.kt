@@ -78,8 +78,8 @@ data class UpdateStockRequest(
 class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     
     companion object {
-        // Back4app production URL
-        private const val BASE_URL = "https://rayshopeeapi-8ivucqzy.b4a.run"
+        // Local network URL instead of dead Back4app URL
+        private const val BASE_URL = "http://192.168.15.7:3003"
     }
     
     private val json = Json {

@@ -1,0 +1,1 @@
+https://partner.shopeemobile.com/api/v2/shop/auth_partner?partner_id=2033681&redirect=https://rayshopee.localhost/api/auth/callback&timestamp=1777937387&sign=42f59109778a9bd4af4f3ef5ae23ce9e50473df95af2aaa22ead18504a580c6a

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "concurrently -k -n \"SERVER,VITE\" -c \"cyan,magenta\" \"node server/index.js\" \"vite\"",
+    "dev": "concurrently -k -n \"SERVER,VITE,TUNNEL\" -c \"cyan,magenta,yellow\" \"node server/index.js\" \"vite\" \"npm run tunnel\"",
+    "tunnel": "lt --port 3003 --subdomain rayshopeedev",
     "dev:server": "node server/index.js",
     "dev:client": "vite",
     "build": "vite build",
@@ -27,6 +28,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "concurrently": "^8.2.2",
+    "localtunnel": "^2.0.2",
     "vite": "^5.4.0"
   }
 }

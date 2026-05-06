@@ -44,8 +44,8 @@ import org.json.JSONObject
 import java.util.concurrent.Executors
 import androidx.compose.material3.ExperimentalMaterial3Api
 
-// Back4app production URL
-private const val TUNNEL_BASE_URL = "https://rayshopeeapi-8ivucqzy.b4a.run"
+// Local network URL
+private const val TUNNEL_BASE_URL = "http://192.168.15.7:3003"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
