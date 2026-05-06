@@ -1,12 +1,12 @@
 {
   "name": "rayshopee",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Shopee Price & Stock Manager — Local Dashboard",
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
     "dev": "concurrently -k -n \"SERVER,VITE,TUNNEL\" -c \"cyan,magenta,yellow\" \"node server/index.js\" \"vite\" \"npm run tunnel\"",
-    "tunnel": "lt --port 3003 --subdomain rayshopeedev",
+    "tunnel": "npx ngrok http 3003 --domain unpaining-transcriptionally-patrick.ngrok-free.dev",
     "dev:server": "node server/index.js",
     "dev:client": "vite",
     "build": "vite build",

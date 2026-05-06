@@ -1188,6 +1188,156 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
+// ---------- Orders To Ship ----------
+app.get('/api/orders/to-ship', async (req, res) => {
+  try {
+    if (!(SHOPEE_PARTNER_ID && SHOPEE_PARTNER_KEY && shopId && accessToken)) {
+      return res.status(400).json({ error: 'not_configured', message: 'Credenciais não configuradas no .env' });
+    }
+
+    await ensureValidToken();
+
+    // 1. Get Order List (READY_TO_SHIP)
+    // We get orders from the last 15 days
+    const timeTo = Math.floor(Date.now() / 1000);
+    const timeFrom = timeTo - (15 * 24 * 60 * 60);
+
+    const orderListRes = await shopeeGet('/api/v2/order/get_order_list', {
+      time_range_field: 'create_time',
+      time_from: timeFrom,
+      time_to: timeTo,
+      page_size: 50
+    });
+
+    if (orderListRes.error) {
+      return res.status(400).json({ error: orderListRes.error, message: orderListRes.message });
+    }
+
+    const orderSnList = (orderListRes.response?.order_list || []).map(o => o.order_sn);
+
+    if (orderSnList.length === 0) {
+      return res.json({ orders: [] });
+    }
+
+    // 2. Get Order Details
+    const orderDetailRes = await shopeeGet('/api/v2/order/get_order_detail', {
+      order_sn_list: orderSnList.join(','),
+      request_order_status_pending: false,
+      response_optional_fields: 'item_list,total_amount,shipping_carrier'
+    });
+
+    const ordersData = orderDetailRes.response?.order_list || [];
+
+    // 3. Get products cost from Supabase
+    // Extract all item_id and model_id pairs
+    const productQueries = [];
+    ordersData.forEach(order => {
+      (order.item_list || []).forEach(item => {
+        productQueries.push({ item_id: String(item.item_id), model_id: String(item.model_id) });
+      });
+    });
+
+    const costMap = {};
+    if (supabase && productQueries.length > 0) {
+      const itemIds = [...new Set(productQueries.map(p => p.item_id))];
+      const { data: dbProducts } = await supabase
+        .from('products')
+        .select('item_id, model_id, cost, shopee_stock, GTIN_EAN_BarCode')
+        .in('item_id', itemIds);
+
+      if (dbProducts) {
+        dbProducts.forEach(dbP => {
+          costMap[`${dbP.item_id}_${dbP.model_id}`] = { 
+            cost: Number(dbP.cost) || 0, 
+            stock: Number(dbP.shopee_stock) || 0,
+            barcode: dbP.GTIN_EAN_BarCode || ''
+          };
+        });
+      }
+    }
+
+    // TAX AND PROFIT CONSTANTS
+    const TAXA_TRANSACAO = 0.02;
+    const IMPOSTO_GOVERNO = 0.06;
+    const FEE_TIERS = [
+      { minPrice: 0.0, commission: 0.25, fixedFee: 4.00, pixSubsidy: 0.00 },
+      { minPrice: 12.0, commission: 0.20, fixedFee: 4.00, pixSubsidy: 0.00 },
+      { minPrice: 80.0, commission: 0.14, fixedFee: 16.00, pixSubsidy: 0.01 },
+      { minPrice: 100.0, commission: 0.14, fixedFee: 16.00, pixSubsidy: 0.01 },
+      { minPrice: 150.0, commission: 0.12, fixedFee: 22.00, pixSubsidy: 0.01 },
+      { minPrice: 300.0, commission: 0.10, fixedFee: 36.00, pixSubsidy: 0.02 },
+      { minPrice: 500.0, commission: 0.08, fixedFee: 46.00, pixSubsidy: 0.02 },
+    ];
+
+    const calculateItemProfit = (price, cost) => {
+      if (price <= 0 || cost <= 0) return 0;
+      let tier = FEE_TIERS[0];
+      for (const t of [...FEE_TIERS].reverse()) {
+        if (price >= t.minPrice) {
+          tier = t;
+          break;
+        }
+      }
+      const commission = price * tier.commission;
+      const fixedFee = tier.fixedFee;
+      const pixSubsidy = price * tier.pixSubsidy;
+      const transacao = price * TAXA_TRANSACAO;
+      const taxaShopee = commission + fixedFee + transacao - pixSubsidy;
+      const imposto = price * IMPOSTO_GOVERNO;
+      return price - cost - taxaShopee - imposto;
+    };
+
+    // 4. Format Orders
+    const orders = ordersData.map(order => {
+      let orderProfit = 0;
+      let orderCost = 0;
+      
+      const items = (order.item_list || []).map(item => {
+        const itemPrice = item.model_discounted_price || item.model_original_price || 0;
+        const dbData = costMap[`${item.item_id}_${item.model_id}`] || { cost: 0, stock: 0 };
+        const cost = dbData.cost;
+        const stock = dbData.stock;
+        const quantity = item.model_quantity_purchased || 1;
+        
+        const profitPerItem = calculateItemProfit(itemPrice, cost);
+        orderProfit += profitPerItem * quantity;
+        orderCost += cost * quantity;
+
+        return {
+          itemId: String(item.item_id),
+          modelId: String(item.model_id),
+          name: item.item_name,
+          variation: item.model_name || 'Padrão',
+          sku: item.model_sku || item.item_sku || '',
+          image: item.image_info?.image_url || '',
+          price: itemPrice,
+          cost: cost,
+          quantity: quantity,
+          predictedProfit: profitPerItem * quantity,
+          stock: stock,
+          barcode: dbData.barcode || ''
+        };
+      });
+
+      return {
+        orderSn: order.order_sn,
+        status: order.order_status,
+        createTime: (order.create_time || 0) * 1000,
+        totalAmount: order.total_amount || 0,
+        shippingCarrier: order.shipping_carrier || '',
+        items: items,
+        orderCost: orderCost || 0,
+        predictedProfit: orderProfit || 0
+      };
+    });
+
+    res.json({ orders });
+  } catch (err) {
+    console.error('[orders to-ship]', err);
+    res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
 // ---------- Search Products (by SKU or name) ----------
 app.get('/api/products/search', async (req, res) => {
   try {
@@ -1245,46 +1395,50 @@ app.get('/api/products/search', async (req, res) => {
 app.post('/api/products/update-cost', async (req, res) => {
   try {
     const { item_id, model_id, cost } = req.body;
-    console.log('[update-cost] received:', { item_id, model_id, cost });
+    console.log(`[update-cost] Recebido: item=${item_id}, model=${model_id}, custo=${cost}`);
 
     if (!supabase) {
       return res.status(400).json({ error: 'not_configured', message: 'Supabase não configurado.' });
     }
 
-    // First check if exists
+    // 1. Verificar se o produto já existe no banco
     const { data: existing } = await supabase
       .from('products')
-      .select('id')
-      .eq('item_id', item_id)
-      .eq('model_id', model_id)
+      .select('item_id')
+      .eq('item_id', String(item_id))
+      .eq('model_id', String(model_id))
       .maybeSingle();
 
+    let dbErr;
     if (existing) {
-      // Update existing
-      const { error: dbErr } = await supabase
+      // 2. Se existe, atualiza apenas o custo
+      const { error } = await supabase
         .from('products')
         .update({ cost: Number(cost) || 0 })
-        .eq('item_id', item_id)
-        .eq('model_id', model_id);
-      if (dbErr) {
-        console.error('[update-cost] update error:', dbErr);
-        return res.status(400).json({ error: 'db_error', message: dbErr.message });
-      }
+        .eq('item_id', String(item_id))
+        .eq('model_id', String(model_id));
+      dbErr = error;
     } else {
-      // Insert new
-      const { error: dbErr } = await supabase
+      // 3. Se não existe, cria um novo registro básico
+      const { error } = await supabase
         .from('products')
-        .insert({ item_id, model_id, cost: Number(cost) || 0 });
-      if (dbErr) {
-        console.error('[update-cost] insert error:', dbErr);
-        return res.status(400).json({ error: 'db_error', message: dbErr.message });
-      }
+        .insert({ 
+          item_id: String(item_id), 
+          model_id: String(model_id), 
+          cost: Number(cost) || 0 
+        });
+      dbErr = error;
     }
 
-    console.log('[update-cost] success for item_id:', item_id, 'model_id:', model_id);
-    res.json({ success: true, message: 'Custo atualizado com sucesso.' });
+    if (dbErr) {
+      console.error('[update-cost] Erro Supabase:', dbErr.message);
+      return res.status(400).json({ error: 'db_error', message: dbErr.message });
+    }
+
+    console.log('[update-cost] ✅ Custo salvo com sucesso!');
+    res.json({ success: true, message: 'Custo atualizado.' });
   } catch (err) {
-    console.error('[update-cost]', err);
+    console.error('[update-cost] Erro fatal:', err);
     res.status(500).json({ error: 'server_error', message: err.message });
   }
 });
