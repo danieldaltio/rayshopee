@@ -7,6 +7,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import selfsigned from 'selfsigned';
 import { createClient } from '@supabase/supabase-js';
+import archiver from 'archiver';
+import { tryDownloadInvoice, getXmlsFromSefazByPeriod, initSefazService } from './sefaz-service.js';
 
 import dotenv from 'dotenv';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +17,10 @@ const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
 dotenv.config({ path: ENV_PATH });
 
 const app = express();
+
+// Initialize SEFAZ service
+await initSefazService();
+
 console.log('Express version:', express.version);
 app.use(cors());
 app.use(express.json());
@@ -31,12 +37,6 @@ console.log('Routes defined:', '/', '/api/health', '/api/wakeup');
 app.get('/', (_req, res) => {
   console.log('GET /');
   res.json({ ok: true, msg: 'root' });
-});
-
-// Health
-app.get('/api/health', (_req, res) => {
-  console.log('GET /api/health');
-  res.json({ ok: true });
 });
 
 // Wake up endpoint (to prevent cold start)
@@ -187,7 +187,15 @@ async function shopeeGet(apiPath, params = {}) {
   await ensureValidToken();
   const url = buildUrl(apiPath, params);
   const res = await fetch(url);
-  const data = await res.json();
+  
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    console.error(`[Shopee] Failed to parse JSON from ${apiPath}:`, text.substring(0, 200));
+    return { error: 'parse_failed', message: e.message, raw: text.substring(0, 500) };
+  }
 
   // Auto-refresh on auth error
   if (data.error === 'error_auth' || data.error === 'error_token_expired') {
@@ -225,6 +233,19 @@ async function shopeePost(apiPath, body = {}) {
   }
 
   return data;
+}
+
+/**
+ * Get details for a single order
+ */
+async function getOrderDetail(orderSn) {
+  const detailRes = await shopeeGet('/api/v2/order/get_order_detail', {
+    order_sn_list: orderSn,
+    response_optional_fields: 'invoice_data'
+  });
+  
+  const orderList = detailRes.response?.order_list || [];
+  return orderList[0] || null;
 }
 
 // ============================================================
@@ -342,6 +363,291 @@ app.post('/api/auth/refresh', async (_req, res) => {
   }
 });
 
+// ============================================================
+//  XML DOWNLOADER ROUTES
+// ============================================================
+
+app.get('/api/xml-downloader/orders', async (req, res) => {
+  try {
+    const { time_from, time_to, status = 'ALL' } = req.query;
+
+    if (!time_from || !time_to) {
+      return res.status(400).json({ error: 'missing_params', message: 'time_from e time_to são obrigatórios.' });
+    }
+
+    const cacheKey = `${time_from}-${time_to}-${status}`;
+    const cached = getCacheData(cacheKey);
+    if (cached) return res.json(cached);
+
+    console.log(`[xml-downloader] Buscando pedidos de ${time_from} até ${time_to} (status: ${status})`);
+    
+    // Fetch order list first
+    const allOrders = await fetchAllInvoiceOrders(parseInt(time_from), parseInt(time_to), status);
+    
+    if (allOrders.length === 0) {
+      return res.json({ orders: [], total: 0 });
+    }
+
+    // Filter by status if needed
+    let filteredOrders = allOrders;
+    if (status === 'CANCELLED') {
+      filteredOrders = allOrders.filter(o => o.order_status === 'CANCELLED');
+    } else if (status === 'RETURNED') {
+      filteredOrders = allOrders.filter(o => o.order_status === 'IN_CANCEL' || o.order_status === 'CANCELLED' || o.order_status === 'RETURNED');
+    }
+
+    // Fetch details in batches of 50
+    const batchSize = 50;
+    const ordersData = [];
+    for (let i = 0; i < filteredOrders.length; i += batchSize) {
+      const batch = filteredOrders.slice(i, i + batchSize);
+      const sns = batch.map(o => o.order_sn).join(',');
+      const details = await shopeeGet('/api/v2/order/get_order_detail', {
+        order_sn_list: sns,
+        response_optional_fields: 'invoice_data,order_status,create_time,total_amount,item_list'
+      });
+      if (details.response?.order_list) {
+        ordersData.push(...details.response.order_list);
+      }
+    }
+
+    const result = ordersData.map(o => ({
+      orderSn: o.order_sn,
+      status: o.order_status,
+      createTime: o.create_time * 1000,
+      totalAmount: o.total_amount,
+      hasXml: !!(o.invoice_data?.access_key),
+      invoiceData: o.invoice_data ? {
+        invoiceNumber: o.invoice_data.number,
+        accessKey: o.invoice_data.access_key
+      } : null,
+      items: (o.item_list || []).map(i => ({ name: i.item_name }))
+    }));
+
+    const responseData = { orders: result, total: result.length };
+    setCacheData(cacheKey, responseData);
+    res.json(responseData);
+  } catch (err) {
+    console.error('[xml-downloader/orders]', err);
+    res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+app.get('/api/xml-downloader/raw', async (req, res) => {
+  try {
+    const { path, ...params } = req.query;
+    const data = await shopeeGet(path, params);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/xml-downloader/orders/:orderSn/raw', async (req, res) => {
+  try {
+    const { orderSn } = req.params;
+    const data = await shopeeGet('/api/v2/order/get_order_detail', { 
+      order_sn_list: orderSn,
+      response_optional_fields: 'invoice_data'
+    });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/xml-downloader/orders/:orderSn/xml', async (req, res) => {
+  try {
+    const { orderSn } = req.params;
+    
+    // 1. Get Access Key
+    const order = await getOrderDetail(orderSn);
+    const accessKey = order?.invoice_data?.access_key;
+    
+    if (!accessKey) {
+      return res.status(404).json({ error: 'no_access_key', message: 'Chave de acesso não encontrada para este pedido.' });
+    }
+
+    // 2. Check Cache
+    if (xmlCache.has(accessKey)) {
+      console.log(`[xml-downloader] XML carregado do cache: ${accessKey}`);
+      res.setHeader('Content-Type', 'text/xml');
+      res.setHeader('Content-Disposition', `attachment; filename="NFe_${orderSn}.xml"`);
+      return res.send(xmlCache.get(accessKey));
+    }
+
+    // 2. Download from SEFAZ
+    console.log(`[xml-downloader] Baixando XML da SEFAZ para pedido: ${orderSn} (Chave: ${accessKey})`);
+    const result = await tryDownloadInvoice(orderSn, accessKey);
+    
+    if (result.success && result.content) {
+      xmlCache.set(accessKey, result.content);
+      res.setHeader('Content-Type', 'text/xml');
+      res.setHeader('Content-Disposition', `attachment; filename="NFe_${orderSn}.xml"`);
+      return res.send(result.content);
+    }
+
+    // 3. Fallback to Shopee download_invoice se SEFAZ falhar (ou 632)
+    console.log(`[xml-downloader] SEFAZ falhou (${result.code}). Tentando fallback Shopee...`);
+    try {
+      // 1. Tenta download_invoice (JSON com invoice_url)
+      let shopeeData = await shopeeGet('/api/v2/order/download_invoice', { order_sn: orderSn });
+      
+      if (shopeeData.response?.invoice_url) {
+        console.log(`[xml-downloader] Invoice URL (JSON) encontrada: ${shopeeData.response.invoice_url}`);
+        const invoiceRes = await fetch(shopeeData.response.invoice_url);
+        const invoiceContent = await invoiceRes.text();
+        if (invoiceContent.includes('<?xml') || invoiceContent.includes('<nfeProc')) {
+          xmlCache.set(accessKey, invoiceContent);
+          res.setHeader('Content-Type', 'text/xml');
+          res.setHeader('Content-Disposition', `attachment; filename="NFe_${orderSn}.xml"`);
+          return res.send(invoiceContent);
+        }
+      }
+
+      // 2. Tenta download_invoice_doc (que retorna o XML cru direto no body)
+      console.log(`[xml-downloader] Tentando download_invoice_doc (raw) para ${orderSn}...`);
+      const rawUrl = buildUrl('/api/v2/order/download_invoice_doc', { order_sn: orderSn });
+      const rawRes = await fetch(rawUrl);
+      const rawText = await rawRes.text();
+      
+      if (rawText.includes('<?xml') || rawText.includes('<nfeProc')) {
+        console.log('[xml-downloader] XML cru retornado com sucesso via download_invoice_doc!');
+        xmlCache.set(accessKey, rawText);
+        res.setHeader('Content-Type', 'text/xml');
+        res.setHeader('Content-Disposition', `attachment; filename="NFe_${orderSn}.xml"`);
+        return res.send(rawText);
+      }
+      
+      console.warn('[xml-downloader] Fallback não retornou um XML válido.');
+    } catch (err) {
+      console.warn('[xml-downloader] Erro no fallback Shopee:', err.message);
+    }
+
+    res.status(500).json({ 
+      error: 'sefaz_error', 
+      message: result.error || 'Erro ao baixar da SEFAZ',
+      code: result.code 
+    });
+  } catch (err) {
+    console.error('[xml-downloader/xml]', err);
+    res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+app.get('/api/xml-downloader/access-key/:accessKey', async (req, res) => {
+  try {
+    const { accessKey } = req.params;
+    
+    if (!accessKey || accessKey.length !== 44) {
+      return res.status(400).json({ error: 'invalid_key', message: 'Chave de acesso deve ter 44 dígitos.' });
+    }
+
+    // 1. Check Cache
+    if (xmlCache.has(accessKey)) {
+      console.log(`[xml-downloader] XML carregado do cache: ${accessKey}`);
+      res.setHeader('Content-Type', 'text/xml');
+      res.setHeader('Content-Disposition', `attachment; filename="NFe_${accessKey}.xml"`);
+      return res.send(xmlCache.get(accessKey));
+    }
+
+    // 2. Download from SEFAZ
+    console.log(`[xml-downloader] Baixando XML da SEFAZ por chave direta: ${accessKey}`);
+    const result = await tryDownloadInvoice(null, accessKey);
+    
+    if (result.success && result.content) {
+      xmlCache.set(accessKey, result.content);
+      res.setHeader('Content-Type', 'text/xml');
+      res.setHeader('Content-Disposition', `attachment; filename="NFe_${accessKey}.xml"`);
+      return res.send(result.content);
+    }
+
+    res.status(500).json({ 
+      error: 'sefaz_error', 
+      message: result.error || 'Erro ao baixar da SEFAZ',
+      code: result.code 
+    });
+  } catch (err) {
+    console.error('[xml-downloader/access-key]', err);
+    res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+app.get('/api/xml-downloader/sync-sefaz', async (req, res) => {
+  try {
+    const { time_from, time_to } = req.query;
+    if (!time_from || !time_to) return res.status(400).json({ error: 'missing_period' });
+
+    console.log(`[xml-downloader] Sincronizando SEFAZ de ${time_from} até ${time_to}`);
+    const xmls = await getXmlsFromSefazByPeriod(parseInt(time_from), parseInt(time_to));
+    
+    let count = 0;
+    for (const item of xmls) {
+      if (item.chave && !xmlCache.has(item.chave)) {
+        xmlCache.set(item.chave, item.xml);
+        count++;
+      }
+    }
+
+    res.json({ success: true, synced: count, total_in_cache: xmlCache.size });
+  } catch (err) {
+    console.error('[xml-downloader/sync-sefaz]', err);
+    res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
+
+app.get('/api/xml-downloader/zip', async (req, res) => {
+  try {
+    const { orders } = req.query;
+    if (!orders) return res.status(400).json({ error: 'missing_orders' });
+    
+    const orderSns = orders.split(',');
+    console.log(`[xml-downloader/zip] Processando ${orderSns.length} pedidos...`);
+
+    const zip = archiver('zip', { zlib: { level: 9 } });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="XMLs_${Date.now()}.zip"`);
+    zip.pipe(res);
+
+    // Process with concurrency
+    const downloadAndAppend = async (orderSn) => {
+      try {
+        const order = await getOrderDetail(orderSn);
+        const accessKey = order?.invoice_data?.access_key;
+        if (!accessKey) return;
+
+        let content = xmlCache.get(accessKey);
+        if (!content) {
+          const result = await tryDownloadInvoice(orderSn, accessKey);
+          if (result.success && result.content) {
+            content = result.content;
+            xmlCache.set(accessKey, content);
+          }
+        }
+
+        if (content) {
+          zip.append(content, { name: `NFe_${orderSn}.xml` });
+        }
+      } catch (e) {
+        console.error(`[zip] Error order ${orderSn}:`, e.message);
+      }
+    };
+
+    const CONCURRENCY = 5;
+    for (let i = 0; i < orderSns.length; i += CONCURRENCY) {
+      const batch = orderSns.slice(i, i + CONCURRENCY);
+      await Promise.all(batch.map(downloadAndAppend));
+    }
+
+    await zip.finalize();
+  } catch (err) {
+    console.error('[xml-downloader/zip]', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'server_error', message: err.message });
+    }
+  }
+});
+
 /**
  * Persist key-value pairs to .env file
  */
@@ -424,6 +730,73 @@ function buildCallbackHTML(success, message) {
 const productsCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 let cacheTimestamp = 0;
+
+// XML Downloader Cache
+const xmlCache = new Map();
+const downloaderOrdersCache = new Map();
+
+function getCacheData(key) {
+  const cached = downloaderOrdersCache.get(key);
+  if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+    return cached.data;
+  }
+  return null;
+}
+
+function setCacheData(key, data) {
+  downloaderOrdersCache.set(key, { data, timestamp: Date.now() });
+}
+
+/**
+ * Fetch all orders in a time range, handling pagination and Shopee's 15-day limit
+ */
+async function fetchAllInvoiceOrders(timeFrom, timeTo, status, limit = 500) {
+  let allOrders = [];
+  const FIFTEEN_DAYS = 15 * 24 * 60 * 60;
+  
+  let currentFrom = timeFrom;
+  while (currentFrom < timeTo) {
+    let currentTo = Math.min(currentFrom + FIFTEEN_DAYS, timeTo);
+    
+    console.log(`[fetchAllInvoiceOrders] Chunk: ${currentFrom} -> ${currentTo}`);
+    
+    let cursor = '';
+    let hasMore = true;
+    let chunkCount = 0;
+
+    while (hasMore && chunkCount < limit) {
+      const params = {
+        time_from: currentFrom,
+        time_to: currentTo,
+        page_size: 50,
+        time_range_field: 'create_time',
+      };
+      if (status && status !== 'ALL') params.order_status = status;
+      if (cursor) params.cursor = cursor;
+
+      const data = await shopeeGet('/api/v2/order/get_order_list', params);
+      
+      if (data.error) {
+        console.error('[fetchAllInvoiceOrders] Error:', data.message);
+        break;
+      }
+
+      const orders = data.response?.order_list || [];
+      allOrders.push(...orders);
+      
+      hasMore = data.response?.more;
+      cursor = data.response?.next_cursor || '';
+      chunkCount += orders.length;
+
+      if (!hasMore) break;
+    }
+    
+    currentFrom = currentTo + 1;
+    if (allOrders.length >= limit) break;
+  }
+
+  return allOrders;
+}
 
 // ---------- Search Product by Item ID (for Android App) - MUST BE BEFORE /api/products ----------
 app.get('/api/products/item/:itemId', async (req, res) => {
