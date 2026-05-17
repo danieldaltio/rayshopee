@@ -128,6 +128,26 @@ class EditorViewModel @Inject constructor(
             update { it.copy(priceCents = cents) }
         }
     }
+    fun updateCost(v: String) {
+        if (v.isBlank()) {
+            if (_state.value.product.costCents != null) {
+                update { it.copy(costCents = null) }
+            }
+            return
+        }
+        val clean = v.replace(Regex("[^0-9,.]"), "").replace(",", ".")
+        val doubleValue = clean.toDoubleOrNull()
+        if (doubleValue == null) {
+            if (_state.value.product.costCents != null) {
+                update { it.copy(costCents = null) }
+            }
+        } else {
+            val cents = kotlin.math.round(doubleValue * 100).toLong()
+            if (cents != _state.value.product.costCents) {
+                update { it.copy(costCents = cents) }
+            }
+        }
+    }
     fun updateWeight(v: String) { update { it.copy(weightGrams = v.toIntOrNull() ?: Constants.DEFAULT_WEIGHT_GRAMS) } }
     fun updateWidth(v: String) { update { it.copy(widthCm = v.toIntOrNull() ?: Constants.DEFAULT_WIDTH_CM) } }
     fun updateHeight(v: String) { update { it.copy(heightCm = v.toIntOrNull() ?: Constants.DEFAULT_HEIGHT_CM) } }

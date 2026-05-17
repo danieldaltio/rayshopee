@@ -391,6 +391,92 @@ fun EditorScreen(
                     )
                 }
 
+                // Cost + Profit Preview for simple products (only visible when variations are empty)
+                val hasVars = product.variations.isNotEmpty()
+                if (!hasVars) {
+                    var costText by remember(product.costCents) {
+                        mutableStateOf(
+                            if (product.costCents != null && product.costCents!! > 0L)
+                                "%.2f".format(product.costCents!! / 100.0).replace(".", ",")
+                            else ""
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = costText,
+                            onValueChange = {
+                                if (it.length <= 10) {
+                                    costText = it
+                                    viewModel.updateCost(it)
+                                }
+                            },
+                            label = { Text("Custo Opcional (R$)") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            prefix = { Text("R$ ") }
+                        )
+
+                        if (product.costCents != null && product.costCents!! > 0 && product.priceCents > 0) {
+                            val priceDb = product.priceCents / 100.0
+                            val costDb = product.costCents!! / 100.0
+                            val (profit, margin) = com.shopeelister.util.FinancialUtil.calculateProfit(priceDb, costDb)
+                            val isNegative = profit < 0
+
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp)
+                                    .padding(top = 4.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isNegative) 
+                                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
+                                    else 
+                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 8.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = "Lucro: R$ %.2f".format(profit),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isNegative) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        text = "Margem: %.1f%%".format(margin),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isNegative) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                }
+                            }
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(56.dp)
+                                    .padding(top = 4.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Text(
+                                    "Preencha o custo para ver o lucro.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
                 // Category selection with helper
                 Text(
                     "Categoria (Exigido: Nível Final)",
@@ -567,6 +653,87 @@ fun EditorScreen(
                                         modifier = Modifier.weight(1f),
                                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                                     )
+                                }
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    var localVarCost by remember(variation.costCents) {
+                                        mutableStateOf(
+                                            if (variation.costCents != null && variation.costCents!! > 0L)
+                                                "%.2f".format(variation.costCents!! / 100.0).replace(".", ",")
+                                            else ""
+                                        )
+                                    }
+                                    OutlinedTextField(
+                                        value = localVarCost,
+                                        onValueChange = { costStr ->
+                                            localVarCost = costStr
+                                            val clean = costStr.replace(",", ".")
+                                            val costDouble = clean.toDoubleOrNull()
+                                            val costCentsValue = if (costDouble == null) null else kotlin.math.round(costDouble * 100).toLong()
+                                            viewModel.updateVariation(index, variation.copy(costCents = costCentsValue))
+                                        },
+                                        label = { Text("Custo Opcional") },
+                                        modifier = Modifier.weight(1f),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        prefix = { Text("R$ ") }
+                                    )
+
+                                    if (variation.costCents != null && variation.costCents!! > 0L && variation.priceCents > 0L) {
+                                        val priceDb = variation.priceCents / 100.0
+                                        val costDb = variation.costCents!! / 100.0
+                                        val (profit, margin) = com.shopeelister.util.FinancialUtil.calculateProfit(priceDb, costDb)
+                                        val isNegative = profit < 0
+
+                                        Card(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(56.dp)
+                                                .padding(top = 4.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = if (isNegative) 
+                                                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.8f)
+                                                else 
+                                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                            )
+                                        ) {
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(horizontal = 8.dp),
+                                                verticalArrangement = Arrangement.Center,
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Text(
+                                                    text = "Lucro: R$ %.2f".format(profit),
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isNegative) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                                                )
+                                                Text(
+                                                    text = "Margem: %.1f%%".format(margin),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (isNegative) MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(56.dp)
+                                                .padding(top = 4.dp),
+                                            contentAlignment = Alignment.CenterStart
+                                        ) {
+                                            Text(
+                                                "Preencha o custo para ver o lucro.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
