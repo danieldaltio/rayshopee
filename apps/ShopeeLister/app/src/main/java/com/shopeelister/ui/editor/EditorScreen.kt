@@ -391,36 +391,37 @@ fun EditorScreen(
                     )
                 }
 
-                // Cost + Profit Preview for simple products (only visible when variations are empty)
+                // Cost + Profit Row (Always visible, but behaves based on hasVars)
                 val hasVars = product.variations.isNotEmpty()
-                if (!hasVars) {
-                    var costText by remember(product.costCents) {
-                        mutableStateOf(
-                            if (product.costCents != null && product.costCents!! > 0L)
-                                "%.2f".format(product.costCents!! / 100.0).replace(".", ",")
-                            else ""
-                        )
-                    }
+                var costText by remember(product.costCents) {
+                    mutableStateOf(
+                        if (product.costCents != null && product.costCents!! > 0L)
+                            "%.2f".format(product.costCents!! / 100.0).replace(".", ",")
+                        else ""
+                    )
+                }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = costText,
-                            onValueChange = {
-                                if (it.length <= 10) {
-                                    costText = it
-                                    viewModel.updateCost(it)
-                                }
-                            },
-                            label = { Text("Custo Opcional (R$)") },
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            prefix = { Text("R$ ") }
-                        )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = if (hasVars) "" else costText,
+                        onValueChange = {
+                            if (!hasVars && it.length <= 10) {
+                                costText = it
+                                viewModel.updateCost(it)
+                            }
+                        },
+                        label = { Text(if (hasVars) "Custo (Variações)" else "Custo Opcional (R$)") },
+                        modifier = Modifier.weight(1f),
+                        enabled = !hasVars,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        prefix = { if (!hasVars) { Text("R$ ") } else null }
+                    )
 
+                    if (!hasVars) {
                         if (product.costCents != null && product.costCents!! > 0 && product.priceCents > 0) {
                             val priceDb = product.priceCents / 100.0
                             val costDb = product.costCents!! / 100.0
@@ -470,6 +471,29 @@ fun EditorScreen(
                                 Text(
                                     "Preencha o custo para ver o lucro.",
                                     style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    } else {
+                        // If hasVars, render a subtle hint card that explains that cost is managed in the variations section below!
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .padding(top = 4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Custos gerenciados por variação abaixo",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
