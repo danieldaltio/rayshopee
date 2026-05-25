@@ -8,9 +8,9 @@
 
 | Projeto | Tipo | Status | Descrição |
 |---------|------|--------|-----------|
-| **ShopeeLister** | Android App | ✅ Ativo | Scanner + Publicação produtos Shopee |
-| **android-orders** | Android App | ✅ Estável | Gerenciamento de pedidos |
-| **android-scanner** | Android App | ✅ Estável | Scanner standalone |
+| **ScanAddProdutos** | Android App | ✅ Ativo | Scanner + Publicação produtos Shopee |
+| **PedidosEditProduto** | Android App | ✅ Estável | Gerenciamento de pedidos |
+| **ScanEditProduto** | Android App | ✅ Estável | Scanner standalone |
 | **raycast-extension** | Extension | 🔄 Dev | Extensão Raycast (WIP) |
 | **whatsapp-bot** | Bot | 🔄 Dev | Bot WhatsApp |
 | **web** | Web Dashboard | ✅ Ativo | Dashboard React |
@@ -27,8 +27,8 @@
 │         ┌─────────────────┼─────────────────┐               │
 │         ▼                 ▼                 ▼               │
 │    ┌─────────┐      ┌─────────┐      ┌─────────┐           │
-│    │ Shopee  │      │  Web    │      │ Android │           │
-│    │Lister   │      │Dashboard│      │  Apps   │           │
+│    │ ScanAdd │      │  Web    │      │ Android │           │
+│    │Produtos │      │Dashboard│      │  Apps   │           │
 │    └────┬────┘      └────┬────┘      └────┬────┘           │
 │         │                │                │                │
 └─────────┼────────────────┼────────────────┼────────────────┘
@@ -53,7 +53,7 @@
 
 ---
 
-## 📱 SHOPEELISTER - APP ANDROID
+## 📱 SCANADDPRODUTOS - APP ANDROID
 
 ### Stack Tecnológico
 | Componente | Tecnologia |
@@ -71,7 +71,7 @@
 
 ### Estrutura de Pastas
 ```
-ShopeeLister/app/src/main/java/com/shopeelister/
+ScanAddProdutos/app/src/main/java/com/shopeelister/
 ├── data/
 │   ├── local/
 │   │   └── ConfigStore.kt          # Preferences (tokens, logística)
@@ -397,7 +397,7 @@ SUPABASE_URL=https://xcvazbfjkiddzlxwynni.supabase.co
 SUPABASE_KEY=sb_publishable_RTWk8m9hY8S6KAhFBCY3rw_d9Kw3-Fw
 ```
 
-### gradle.properties (ShopeeLister)
+### gradle.properties (ScanAddProdutos)
 ```properties
 SHOPEE_PARTNER_ID=2033681
 SHOPEE_PARTNER_KEY=shpk4a6252796a70685050567067776267416d6168655744716772694f4c794c
@@ -414,13 +414,13 @@ CLOUDINARY_API_SECRET=2cY-BoGl30u2DruWAsBthZuePlE
 
 ## 📦 OUTROS APPS
 
-### android-orders
+### PedidosEditProduto
 - Gerenciamento de pedidos
 - Lista pedidos prontos para envio
 - Cálculo de lucro por pedido
 - Sync com Supabase
 
-### android-scanner
+### ScanEditProduto
 - Scanner standalone
 - Leitura de código de barras
 - Busca produto por EAN
@@ -489,7 +489,7 @@ node server/index.js                   # Executar direto
 npx ngrok http 3003 --domain unpaining-transcriptionally-patrick.ngrok-free.dev
 
 # Android
-cd ShopeeLister && ./gradlew assembleDebug    # Build APK
+cd ScanAddProdutos && ./gradlew assembleDebug    # Build APK
 adb install -r app/build/outputs/apk/debug/app-debug.apk  # Install
 adb logcat -s ShopeeRepo:V ShopeeAuth:V       # Logs
 adb shell pm clear com.shopeelister            # Limpar dados

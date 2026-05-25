@@ -13,9 +13,12 @@ compiled_raycast_swift
 compiled_raycast_rust
 
 # Android build
-RayShopeeAndroid/app/build/
-RayShopeeAndroid/.gradle/
-RayShopeeAndroid/build/
+**/build/
+**/.gradle/
+**/.kotlin/
+**/local.properties
+.idea/
+**/.idea/
 
 # Logs
 *.log
@@ -24,3 +27,15 @@ RayShopeeAndroid/build/
 .DS_Store
 nul
 *.apk
+
+# AI / Agent specific files
+.planning/
+.opencode/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# SQLite temporary files
+*.sqlite-shm
+*.sqlite-wal

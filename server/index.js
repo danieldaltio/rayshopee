@@ -54,11 +54,13 @@ const {
   AUTH_DOMAIN = 'rayshopee.localhost',
   SUPABASE_URL,
   SUPABASE_KEY,
+  SUPABASE_SERVICE_ROLE_KEY,
 } = process.env;
 
-// Initialize Supabase Client
-const supabase = (SUPABASE_URL && SUPABASE_KEY) 
-  ? createClient(SUPABASE_URL, SUPABASE_KEY) 
+// Initialize Supabase Client (prefer service role key for backend actions to bypass RLS)
+const supabaseKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_KEY;
+const supabase = (SUPABASE_URL && supabaseKey) 
+  ? createClient(SUPABASE_URL, supabaseKey) 
   : null;
 
 let shopId = process.env.SHOPEE_SHOP_ID || '';
@@ -71,6 +73,91 @@ let accessToken = process.env.SHOPEE_ACCESS_TOKEN || '';
 let refreshToken = process.env.SHOPEE_REFRESH_TOKEN || '';
 let tokenExpiresAt = Date.now() + 4 * 60 * 60 * 1000; // Assume 4h from startup
 let isRefreshing = false;
+
+/**
+ * Sync current Shopee tokens and shop ID to the Supabase Company table
+ */
+async function syncTokensToSupabase() {
+  if (!supabase) {
+    console.log('  ⚠️ Supabase client not initialized, skipping DB sync');
+    return;
+  }
+
+  const targetCnpj = process.env.SEFAZ_CNPJ || '44156548000109';
+  const expiresAtIso = new Date(tokenExpiresAt).toISOString();
+
+  console.log(`  🔄 Syncing Shopee tokens to Supabase for CNPJ: ${targetCnpj}...`);
+
+  try {
+    // 1. Try to find the company by target CNPJ
+    let { data: company, error: fetchError } = await supabase
+      .from('Company')
+      .select('id')
+      .eq('cnpj', targetCnpj)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('  ❌ Error fetching company by CNPJ:', fetchError.message);
+    }
+
+    // 2. If not found, try to find default placeholder company
+    if (!company) {
+      console.log('  ℹ️ Company not found by CNPJ, checking for placeholder company...');
+      const { data: placeholder, error: placeholderError } = await supabase
+        .from('Company')
+        .select('id')
+        .eq('cnpj', '00000000000000')
+        .maybeSingle();
+
+      if (placeholderError) {
+        console.error('  ❌ Error fetching placeholder company:', placeholderError.message);
+      }
+      company = placeholder;
+    }
+
+    if (company) {
+      // Update existing company
+      console.log(`  Updating existing Company ID: ${company.id} with Shopee tokens`);
+      const { error: updateError } = await supabase
+        .from('Company')
+        .update({
+          shopee_shop_id: shopId,
+          shopee_access_token: accessToken,
+          shopee_refresh_token: refreshToken,
+          shopee_token_expires_at: expiresAtIso,
+          cnpj: targetCnpj // Update CNPJ if it was the placeholder '00000000000000'
+        })
+        .eq('id', company.id);
+
+      if (updateError) {
+        console.error('  ❌ Error updating company tokens in Supabase:', updateError.message);
+      } else {
+        console.log('  ✅ Shopee tokens successfully updated in Supabase Company table');
+      }
+    } else {
+      // Create a new company record
+      console.log(`  Creating a new Company record with CNPJ ${targetCnpj}`);
+      const { error: insertError } = await supabase
+        .from('Company')
+        .insert({
+          razao_social: 'Minha Empresa',
+          cnpj: targetCnpj,
+          shopee_shop_id: shopId,
+          shopee_access_token: accessToken,
+          shopee_refresh_token: refreshToken,
+          shopee_token_expires_at: expiresAtIso
+        });
+
+      if (insertError) {
+        console.error('  ❌ Error inserting new company in Supabase:', insertError.message);
+      } else {
+        console.log('  ✅ Created new Company in Supabase and stored Shopee tokens');
+      }
+    }
+  } catch (err) {
+    console.error('  ❌ Critical error syncing tokens to Supabase:', err.message);
+  }
+}
 
 /**
  * Generate HMAC-SHA256 sign for auth endpoints (no access_token/shop_id in base string)
@@ -134,6 +221,9 @@ async function refreshAccessToken() {
     } catch (fsErr) {
       console.warn('  ⚠️  Could not persist tokens to .env:', fsErr.message);
     }
+
+    // Sync to Supabase
+    await syncTokensToSupabase().catch(err => console.error('  ❌ DB sync error:', err.message));
 
     const expiresIn = Math.round((tokenExpiresAt - Date.now()) / 60000);
     console.log(`  ✅ Token refreshed! Expires in ${expiresIn} min`);
@@ -273,6 +363,21 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// ---------- Export Config for App ----------
+app.get('/api/config', (_req, res) => {
+  console.log('  📱 App requesting config export');
+  res.json({
+    partner_id: SHOPEE_PARTNER_ID,
+    partner_key: SHOPEE_PARTNER_KEY,
+    shop_id: shopId,
+    access_token: accessToken,
+    groq_key: process.env.GROQ_API_KEY,
+    cloudinary_cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    cloudinary_api_key: process.env.CLOUDINARY_API_KEY,
+    cloudinary_api_secret: process.env.CLOUDINARY_API_SECRET
+  });
+});
+
 // ---------- Generate Shopee OAuth URL ----------
 app.get('/api/auth/url', (_req, res) => {
   if (!SHOPEE_PARTNER_ID || !SHOPEE_PARTNER_KEY) {
@@ -342,13 +447,16 @@ app.get('/api/auth/callback', async (req, res) => {
       SHOPEE_SHOP_ID: shopId,
     });
 
-    const expiresIn = Math.round((tokenExpiresAt - Date.now()) / 60000);
-    console.log(`  ✅ Authorized! Shop: ${shopId}, token expires in ${expiresIn} min`);
+    // Sync to Supabase
+    await syncTokensToSupabase().catch(err => console.error('  ❌ DB sync error:', err.message));
 
-    res.send(buildCallbackHTML(true, `Loja ${shopId} autorizada! Token válido por ${expiresIn} min.`));
+    const expiresIn = Math.round((tokenExpiresAt - Date.now()) / 60000);
+    console.log(`  ✅ Auth completa. Tokens renovados no .env e DB.`);
+    
+    res.redirect('http://localhost:3000/configuracoes?shopee=connected');
   } catch (err) {
     console.error('  ❌ Callback error:', err);
-    res.send(buildCallbackHTML(false, err.message));
+    res.redirect('http://localhost:3000/configuracoes?shopee=error');
   }
 });
 
@@ -812,6 +920,133 @@ function getCacheData(key) {
 function setCacheData(key, data) {
   downloaderOrdersCache.set(key, { data, timestamp: Date.now() });
 }
+
+// ============================================================
+//  CLOUDINARY — Background Removal Proxy (Signed Upload)
+// ============================================================
+
+/**
+ * Generate Cloudinary signed upload signature (SHA-1)
+ * Params must be sorted alphabetically, concatenated as key=value&..., then api_secret appended
+ */
+function generateCloudinarySignature(params, apiSecret) {
+  const sorted = Object.keys(params)
+    .sort()
+    .map(k => `${k}=${params[k]}`)
+    .join('&');
+  const stringToSign = sorted + apiSecret;
+  return crypto.createHash('sha1').update(stringToSign).digest('hex');
+}
+
+/**
+ * POST /api/remove-background
+ * Accepts: multipart/form-data with field "image" (PNG/JPEG file)
+ * Returns: JSON { url: "<processed_image_url>" }
+ *
+ * Flow:
+ *  1. Receive image bytes from Android
+ *  2. Sign the upload params with Cloudinary api_secret (SHA-1)
+ *  3. Upload to Cloudinary with background_removal=cloudinary_ai
+ *  4. Return the transformation URL with e_background_removal
+ */
+app.post('/api/remove-background', express.raw({ type: 'image/*', limit: '20mb' }), async (req, res) => {
+  const {
+    CLOUDINARY_CLOUD_NAME,
+    CLOUDINARY_API_KEY,
+    CLOUDINARY_API_SECRET,
+  } = process.env;
+
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_API_KEY || !CLOUDINARY_API_SECRET) {
+    return res.status(500).json({ error: 'cloudinary_not_configured', message: 'Credenciais Cloudinary não configuradas no servidor.' });
+  }
+
+  try {
+    const imageBuffer = req.body;
+
+    if (!imageBuffer || imageBuffer.length === 0) {
+      return res.status(400).json({ error: 'empty_body', message: 'Imagem não recebida.' });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const folder = 'shopeelister-bg';
+
+    // Params to sign (sorted alphabetically)
+    const paramsToSign = {
+      background_removal: 'cloudinary_ai',
+      folder,
+      timestamp: String(timestamp),
+    };
+
+    const signature = generateCloudinarySignature(paramsToSign, CLOUDINARY_API_SECRET);
+
+    console.log(`[Cloudinary] Uploading image (${imageBuffer.length} bytes)...`);
+
+    // Build multipart body manually using boundary
+    const boundary = `----RayShopee${Date.now()}`;
+    const parts = [];
+
+    const addField = (name, value) => {
+      parts.push(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
+      );
+    };
+
+    addField('api_key', CLOUDINARY_API_KEY);
+    addField('timestamp', String(timestamp));
+    addField('signature', signature);
+    addField('background_removal', 'cloudinary_ai');
+    addField('folder', folder);
+
+    // File part
+    const filePart = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n`),
+      imageBuffer,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+
+    const textParts = Buffer.from(parts.join(''));
+    const body = Buffer.concat([textParts, filePart]);
+
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': String(body.length),
+      },
+      body,
+    });
+
+    const uploadText = await uploadRes.text();
+    let uploadData;
+    try {
+      uploadData = JSON.parse(uploadText);
+    } catch {
+      console.error('[Cloudinary] Upload parse error:', uploadText.substring(0, 300));
+      return res.status(500).json({ error: 'cloudinary_parse_error', message: uploadText.substring(0, 200) });
+    }
+
+    if (!uploadRes.ok || uploadData.error) {
+      console.error('[Cloudinary] Upload failed:', uploadData.error?.message || uploadText);
+      return res.status(502).json({ error: 'cloudinary_upload_failed', message: uploadData.error?.message || 'Upload falhou.' });
+    }
+
+    const publicId = uploadData.public_id;
+    console.log(`[Cloudinary] Upload OK. public_id=${publicId}`);
+
+    // Build transformation URL — e_background_removal applies the AI removal
+    // Cloudinary processes this lazily on first request (may take a few seconds)
+    const processedUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/image/upload/f_png,e_background_removal/${publicId}.png`;
+
+    console.log(`[Cloudinary] Processed URL: ${processedUrl}`);
+    res.json({ url: processedUrl, publicId });
+
+  } catch (err) {
+    console.error('[Cloudinary] Error:', err.message);
+    res.status(500).json({ error: 'server_error', message: err.message });
+  }
+});
 
 /**
  * Fetch all orders in a time range, handling pagination and Shopee's 15-day limit
@@ -1778,11 +2013,107 @@ app.get('/api/orders/to-ship', async (req, res) => {
 });
 
 // ---------- Search Products (by SKU or name) ----------
+// ---------- Search Products (by SKU or name) ----------
 app.get('/api/products/search', async (req, res) => {
   try {
     const { sku, q } = req.query;
     if (!sku && !q) return res.status(400).json({ error: 'sku or q param required' });
 
+    console.log(`[search] Request: sku=${sku}, q=${q}`);
+
+    // Helper profit calculator
+    const TAXA_TRANSACAO = 0.02;
+    const IMPOSTO_GOVERNO = 0.06;
+    const FEE_TIERS = [
+      { minPrice: 0.0, commission: 0.25, fixedFee: 4.00, pixSubsidy: 0.00 },
+      { minPrice: 12.0, commission: 0.20, fixedFee: 4.00, pixSubsidy: 0.00 },
+      { minPrice: 80.0, commission: 0.14, fixedFee: 16.00, pixSubsidy: 0.01 },
+      { minPrice: 100.0, commission: 0.14, fixedFee: 16.00, pixSubsidy: 0.01 },
+      { minPrice: 150.0, commission: 0.12, fixedFee: 22.00, pixSubsidy: 0.01 },
+      { minPrice: 300.0, commission: 0.10, fixedFee: 36.00, pixSubsidy: 0.02 },
+      { minPrice: 500.0, commission: 0.08, fixedFee: 46.00, pixSubsidy: 0.02 },
+    ];
+
+    const calculateItemProfit = (price, cost) => {
+      if (price <= 0 || cost <= 0) return 0;
+      let tier = FEE_TIERS[0];
+      for (const t of [...FEE_TIERS].reverse()) {
+        if (price >= t.minPrice) {
+          tier = t;
+          break;
+        }
+      }
+      const commission = price * tier.commission;
+      const fixedFee = tier.fixedFee;
+      const pixSubsidy = price * tier.pixSubsidy;
+      const transacao = price * TAXA_TRANSACAO;
+      const taxaShopee = commission + fixedFee + transacao - pixSubsidy;
+      const imposto = price * IMPOSTO_GOVERNO;
+      return price - cost - taxaShopee - imposto;
+    };
+
+    // If Supabase is configured, search locally first (much faster, supports ILIKE partial matches, maps costs/margins)
+    if (supabase) {
+      let dbQuery = supabase.from('products').select('*');
+      if (sku) {
+        dbQuery = dbQuery.or(`sku.ilike.%${sku}%,GTIN_EAN_BarCode.ilike.%${sku}%`);
+      } else if (q) {
+        dbQuery = dbQuery.or(`name.ilike.%${q}%,variation_name.ilike.%${q}%,sku.ilike.%${q}%,GTIN_EAN_BarCode.ilike.%${q}%`);
+      }
+
+      const { data: dbProducts, error: dbErr } = await dbQuery.limit(100);
+      
+      if (!dbErr && dbProducts && dbProducts.length > 0) {
+        console.log(`[search] Found ${dbProducts.length} matching products in Supabase`);
+        
+        // Fetch matching items details from Shopee in order to get images (Shopee images are not stored in Supabase)
+        const uniqueItemIds = [...new Set(dbProducts.map(p => p.item_id))];
+        let shopeeItemsMap = {};
+        
+        try {
+          await ensureValidToken();
+          const detailRes = await shopeeGet('/api/v2/product/get_item_base_info', {
+            item_id_list: uniqueItemIds.slice(0, 50).join(','),
+          });
+          const itemList = detailRes.response?.item_list || [];
+          itemList.forEach(item => {
+            shopeeItemsMap[String(item.item_id)] = item;
+          });
+        } catch (shopeeErr) {
+          console.error('[search] Failed to fetch Shopee base info:', shopeeErr.message);
+        }
+
+        const products = dbProducts.map(p => {
+          const shopeeItem = shopeeItemsMap[p.item_id];
+          const image = shopeeItem?.image?.image_url_list?.[0] || '';
+          const price = Number(p.shopee_price) || 0;
+          const cost = Number(p.cost) || 0;
+          const stock = p.shopee_stock || 0;
+
+          const profit = calculateItemProfit(price, cost);
+          const margin = price > 0 ? Math.round((profit / price) * 100) : 0;
+
+          return {
+            item_id: p.item_id,
+            model_id: Number(p.model_id) || 0,
+            name: p.name,
+            variation: p.variation_name || '—',
+            sku: p.sku || '',
+            image: image,
+            price: price,
+            stock: stock,
+            cost: cost,
+            profit: profit,
+            margin: margin
+          };
+        });
+
+        return res.json({ products });
+      }
+    }
+
+    // Fallback: search in Shopee directly (original code)
+    console.log('[search] Falling back to Shopee API search');
     await ensureValidToken();
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = generateSign('/api/v2/product/search_product', timestamp);
@@ -1792,7 +2123,7 @@ app.get('/api/products/search', async (req, res) => {
     searchUrl.searchParams.set('access_token', accessToken);
     searchUrl.searchParams.set('shop_id', shopId);
     searchUrl.searchParams.set('sign', sign);
-    searchUrl.searchParams.set('pagination_value', 0);
+    searchUrl.searchParams.set('pagination_value', ''); // use empty string for initial cursor
     searchUrl.searchParams.set('page_size', 50);
     if (sku) searchUrl.searchParams.set('item_sku', sku);
     if (q) searchUrl.searchParams.set('search_keyword', q);
@@ -1809,16 +2140,68 @@ app.get('/api/products/search', async (req, res) => {
     const detailRes = await shopeeGet('/api/v2/product/get_item_base_info', { item_id_list: itemIds.join(',') });
     const itemList = detailRes.response?.item_list || [];
 
+    // Fetch costs from Supabase to merge
+    const costMap = {};
+    if (supabase) {
+      try {
+        const { data: dbProducts } = await supabase
+          .from('products')
+          .select('item_id, model_id, cost')
+          .in('item_id', itemIds);
+        if (dbProducts) {
+          dbProducts.forEach(dbP => {
+            costMap[`${dbP.item_id}_${dbP.model_id}`] = Number(dbP.cost) || 0;
+          });
+        }
+      } catch (dbErr) {
+        console.error('[search] Supabase cost mapping error:', dbErr.message);
+      }
+    }
+
     const products = [];
     for (const item of itemList) {
       const modelRes = await shopeeGet('/api/v2/product/get_model_list', { item_id: item.item_id });
       const models = modelRes.response?.model || [];
 
       if (models.length === 0) {
-        products.push({ item_id: item.item_id, model_id: 0, name: item.item_name, variation: '—', sku: item.item_sku || '', image: item.image?.image_url_list?.[0] || '', price: item.price_info?.[0]?.current_price || 0, stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0 });
+        const price = item.price_info?.[0]?.current_price || 0;
+        const cost = costMap[`${item.item_id}_0`] || 0;
+        const profit = calculateItemProfit(price, cost);
+        const margin = price > 0 ? Math.round((profit / price) * 100) : 0;
+
+        products.push({
+          item_id: item.item_id,
+          model_id: 0,
+          name: item.item_name,
+          variation: '—',
+          sku: item.item_sku || '',
+          image: item.image?.image_url_list?.[0] || '',
+          price: price,
+          stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+          cost: cost,
+          profit: profit,
+          margin: margin
+        });
       } else {
         for (const m of models) {
-          products.push({ item_id: item.item_id, model_id: m.model_id, name: item.item_name, variation: m.model_name || '—', sku: m.model_sku || item.item_sku || '', image: item.image?.image_url_list?.[0] || '', price: m.price_info?.[0]?.current_price || 0, stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0 });
+          const price = m.price_info?.[0]?.current_price || 0;
+          const cost = costMap[`${item.item_id}_${m.model_id}`] || 0;
+          const profit = calculateItemProfit(price, cost);
+          const margin = price > 0 ? Math.round((profit / price) * 100) : 0;
+
+          products.push({
+            item_id: item.item_id,
+            model_id: m.model_id,
+            name: item.item_name,
+            variation: m.model_name || '—',
+            sku: m.model_sku || item.item_sku || '',
+            image: item.image?.image_url_list?.[0] || '',
+            price: price,
+            stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+            cost: cost,
+            profit: profit,
+            margin: margin
+          });
         }
       }
     }

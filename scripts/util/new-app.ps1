@@ -1,0 +1,1 @@
+$process = Start-Process -FilePath "C:\Ubuntu\root\Projeto-OpenClaw-Docker\RayShopee\b4a.exe" -ArgumentList "new" -NoNewWindow -PassThru -Wait -RedirectStandardInput "C:\Ubuntu\root\Projeto-OpenClaw-Docker\RayShopee\input.txt"

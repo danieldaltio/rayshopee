@@ -1,0 +1,2 @@
+$key = "KC5dXJZ2ZxuBnljc7ox6expNfTScgZoTTZ5Xl6lv"
+$process = Start-Process -FilePath "C:\Ubuntu\root\Projeto-OpenClaw-Docker\RayShopee\b4a.exe" -ArgumentList "configure","accountkey" -NoNewWindow -PassThru -Wait
