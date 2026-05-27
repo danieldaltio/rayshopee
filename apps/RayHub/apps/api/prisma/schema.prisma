@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+  VIEWER
+}
+
+enum InvoiceStatus {
+  PENDING
+  AUTHORIZED
+  CANCELED
+  REJECTED
+}
+
+enum InvoiceType {
+  NFE
+  NFSE
+  CFE
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  password_hash String?  // Opcional se usar Supabase Auth gerencia as senhas
+  name          String?
+  role          Role     @default(OPERATOR)
+  company_id    String?
+  company       Company? @relation(fields: [company_id], references: [id])
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+}
+
+model Company {
+  id                      String   @id @default(uuid())
+  razao_social            String
+  nome_fantasia           String?
+  cnpj                    String   @unique
+  ie                      String?
+  im                      String?
+  regime_tributario       String?
+  // Endereço detalhado
+  endereco_cep            String?
+  endereco_rua            String?
+  endereco_numero         String?
+  endereco_complemento    String?
+  endereco_bairro         String?
+  endereco_cidade         String?
+  endereco_uf             String?
+  // Fiscal
+  certificado_digital_url String?
+  certificado_senha_hash  String?
+  logo_url                String?
+  // Configurações NF-e
+  nfe_serie               String?   @default("1")
+  nfe_proximo_numero      Int?      @default(1)
+  nfe_ambiente            String?   @default("homologacao") // homologacao | producao
+  nfe_provedor            String?   // focus_nfe | nfeio | tecnospeed
+  // Classe de Impostos padrão
+  imposto_calculo_tipo    String?   @default("manual") // manual | ibpt
+  cst_csosn_padrao        String?   // Ex: 400 (Simples), 500, 102...
+  cst_pis_cofins          String?   // Ex: 07 (isento Simples), 01, 02...
+  aliquota_simples        Decimal?  @db.Decimal(5, 2) // Ex: 6.00 (%)
+  impostos_config         Json?     // Configurações fiscais avançadas
+  // Shopee Integration
+  shopee_shop_id          String?
+  shopee_access_token     String?
+  shopee_refresh_token    String?
+  shopee_token_expires_at DateTime?
+  users                   User[]
+  created_at              DateTime @default(now())
+  updated_at              DateTime @updatedAt
+}
+
+model Customer {
+  id                    String   @id @default(uuid())
+  name                  String
+  cpf_cnpj              String?
+  email                 String?
+  telefone              String?
+  endereco_rua          String?
+  endereco_numero       String?
+  endereco_complemento  String?
+  endereco_bairro       String?
+  endereco_cidade       String?
+  endereco_uf           String?
+  endereco_cep          String?
+  shopee_buyer_username String?
+  orders                Order[]
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model products {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  item_id          BigInt
+  model_id         BigInt
+  name             String
+  variation_name   String?
+  sku              String?
+  shopee_price     Decimal   @db.Decimal(10, 2)
+  shopee_stock     Int
+  cost             Decimal?  @default(0.00) @db.Decimal(10, 2)
+  is_active        Boolean?  @default(true)
+  last_sync        DateTime? @default(now()) @db.Timestamptz(6)
+  GTIN_EAN_BarCode String?
+  
+  // Novos campos para o RayHub ERP (Fiscais e Logistica)
+  ncm              String?
+  cfop             String?
+  cst_csosn        String?
+  unidade          String    @default("UN")
+  peso             Decimal?  @db.Decimal(10, 3)
+  altura           Decimal?  @db.Decimal(10, 2)
+  largura          Decimal?  @db.Decimal(10, 2)
+  comprimento      Decimal?  @db.Decimal(10, 2)
+  estoque_minimo   Int       @default(0)
+  categoria_id     String?
+  imagem_url       String?
+  
+  order_items      OrderItem[]
+
+  @@unique([item_id, model_id])
+}
+
+model Order {
+  id               String      @id @default(uuid())
+  numero           String?
+  shopee_order_sn  String?     @unique
+  status           String
+  canal            String      @default("shopee")
+  customer_id      String
+  customer         Customer    @relation(fields: [customer_id], references: [id])
+  subtotal         Decimal     @db.Decimal(10, 2)
+  frete            Decimal     @db.Decimal(10, 2)
+  desconto         Decimal     @default(0) @db.Decimal(10, 2)
+  total            Decimal     @db.Decimal(10, 2)
+  shopee_comissao  Decimal?    @db.Decimal(10, 2)
+  shopee_status    String?
+  data_pedido      DateTime
+  data_atualizacao DateTime    @updatedAt
+  items            OrderItem[]
+  invoice          Invoice?
+}
+
+model OrderItem {
+  id             String   @id @default(uuid())
+  order_id       String
+  order          Order    @relation(fields: [order_id], references: [id])
+  product_id     String   @db.Uuid
+  product        products @relation(fields: [product_id], references: [id])
+  quantidade     Int
+  preco_unitario Decimal  @db.Decimal(10, 2)
+  subtotal       Decimal  @db.Decimal(10, 2)
+}
+
+model Invoice {
+  id                   String        @id @default(uuid())
+  numero               String?
+  serie                String?
+  tipo                 InvoiceType   @default(NFE)
+  order_id             String        @unique
+  order                Order         @relation(fields: [order_id], references: [id])
+  chave_acesso         String?       @unique
+  protocolo            String?
+  status               InvoiceStatus @default(PENDING)
+  xml_url              String?
+  danfe_pdf_url        String?
+  emitida_em           DateTime?
+  sefaz_mensagem       String?
+  dados_completos_json Json?
+  created_at           DateTime      @default(now())
+  updated_at           DateTime      @updatedAt
+}
