@@ -2798,22 +2798,8 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
 // ============================================================
 
 // HTTP server
-const port = parseInt(process.env.PORT) || 3000;
-console.log(`Starting server on port ${port}...`);
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Server started on port ${port}`);
-  console.log(`  ─────────────────────`);
-  console.log(`  🌐  HTTP:  http://localhost:${PORT}`);
-  console.log(`  🔒  HTTPS: https://${AUTH_DOMAIN}:${HTTPS_PORT}`);
-  console.log(`  📦  Shop ID: ${shopId || '⚠️  NÃO CONFIGURADO'}`);
-  console.log(`  🔑  Auth: ${accessToken ? '✅ Configurado' : '❌ Faltando'}`);
-  console.log(`  🔄  Refresh: ${refreshToken ? '✅ Ativo' : '❌ Sem refresh token'}\n`);
-
-  // Try initial token refresh on startup
-  if (SHOPEE_PARTNER_ID && SHOPEE_PARTNER_KEY && refreshToken) {
-    refreshAccessToken().catch(() => {});
-  }
-});
+    try {
+      const tokenPath = '/api/v2/auth/token/get';
 
 // Add product with GTIN manually
 app.post('/api/products/add-gtin/:itemId', async (req, res) => {
@@ -2897,4 +2883,22 @@ app.post('/api/products/add-gtin/:itemId', async (req, res) => {
 // HTTPS server (for Shopee OAuth callback) - disabled temporarily
 // https.createServer({ key: sslKey, cert: sslCert }, app).listen(HTTPS_PORT, () => {
 //   console.log(`  🔐 OAuth callback pronto em https://${AUTH_DOMAIN}:${HTTPS_PORT}/api/auth/callback`);
-// });
+// Export app for Serverless / Vercel
+module.exports = app;
+
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  const port = parseInt(process.env.PORT) || 3000;
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Server started on port ${port}`);
+    console.log(`  ─────────────────────`);
+    console.log(`  🌐  HTTP:  http://localhost:${port}`);
+    console.log(`  📦  Shop ID: ${shopId || '⚠️  NÃO CONFIGURADO'}`);
+    console.log(`  🔑  Auth: ${accessToken ? '✅ Configurado' : '❌ Faltando'}`);
+    console.log(`  🔄  Refresh: ${refreshToken ? '✅ Ativo' : '❌ Sem refresh token'}\n`);
+
+    // Try initial token refresh on startup
+    if (SHOPEE_PARTNER_ID && SHOPEE_PARTNER_KEY && refreshToken) {
+      refreshAccessToken().catch(() => {});
+    }
+  });
+}
