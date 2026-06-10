@@ -25,6 +25,33 @@ console.log('Express version:', express.version);
 app.use(cors());
 app.use(express.json());
 
+// Middleware to globally stringify _id fields to prevent BigInt deserialization crashes on Android
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function (obj) {
+    const stringifyIds = (o) => {
+      if (o === null || typeof o !== 'object') return o;
+      if (o instanceof Date) return o;
+      if (Array.isArray(o)) return o.map(stringifyIds);
+      
+      const newObj = {};
+      for (const [key, value] of Object.entries(o)) {
+        // If it's a number (or string that looks like a big number) and ends with _id, or specifically itemId/variationId
+        if (key.endsWith('_id') || key === 'itemId' || key === 'variationId') {
+          newObj[key] = String(value);
+        } else if (typeof value === 'object') {
+          newObj[key] = stringifyIds(value);
+        } else {
+          newObj[key] = value;
+        }
+      }
+      return newObj;
+    };
+    return originalJson.call(this, stringifyIds(obj));
+  };
+  next();
+});
+
 app.use((req, res, next) => {
   console.log(`[REQ] ${req.method} ${req.url}`);
   next();
@@ -1124,15 +1151,19 @@ app.get('/api/products/item/:itemId', async (req, res) => {
     });
     const models = modelRes.response?.model || [];
 
-    // Get costs from database
+    // Get costs and barcodes from database
     const costMap = {};
+    const barcodeMap = {};
     if (supabase) {
       const { data: costData } = await supabase
         .from('products')
-        .select('model_id, cost')
+        .select('model_id, cost, GTIN_EAN_BarCode')
         .eq('item_id', itemId);
       if (costData) {
-        costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
+        costData.forEach(p => { 
+          costMap[String(p.model_id)] = Number(p.cost) || 0; 
+          barcodeMap[String(p.model_id)] = p.GTIN_EAN_BarCode || '';
+        });
       }
     }
 
@@ -1141,7 +1172,8 @@ app.get('/api/products/item/:itemId', async (req, res) => {
       name: m.model_name || 'Padrão',
       price: m.price_info?.[0]?.current_price || 0,
       stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-      cost: costMap[String(m.model_id)] || 0
+      cost: costMap[String(m.model_id)] || 0,
+      barcode: barcodeMap[String(m.model_id)] || ''
     }));
 
     if (variations.length === 0) {
@@ -1150,7 +1182,8 @@ app.get('/api/products/item/:itemId', async (req, res) => {
         name: 'Padrão',
         price: itemDetail.price_info?.[0]?.current_price || 0,
         stock: itemDetail.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-        cost: costMap['0'] || 0
+        cost: costMap['0'] || 0,
+        barcode: barcodeMap['0'] || ''
       });
     }
 
@@ -1194,16 +1227,18 @@ app.get('/api/products/barcode', async (req, res) => {
         
         const models = modelRes.response?.model || [];
         
-        // Get all costs from database for this item
+        // Get all costs and barcodes from database for this item
         const { data: costData } = await supabase
           .from('products')
-          .select('model_id, cost')
+          .select('model_id, cost, GTIN_EAN_BarCode')
           .eq('item_id', product.item_id);
         
         const costMap = {};
+        const barcodeMap = {};
         if (costData) {
           costData.forEach(p => {
             costMap[String(p.model_id)] = Number(p.cost) || 0;
+            barcodeMap[String(p.model_id)] = p.GTIN_EAN_BarCode || '';
           });
         }
         
@@ -1212,7 +1247,8 @@ app.get('/api/products/barcode', async (req, res) => {
           name: m.model_name || 'Padrão',
           price: m.price_info?.[0]?.current_price || 0,
           stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-          cost: costMap[String(m.model_id)] || 0
+          cost: costMap[String(m.model_id)] || 0,
+          barcode: barcodeMap[String(m.model_id)] || ''
         }));
         
         // If no variations, use item-level data
@@ -1228,7 +1264,8 @@ app.get('/api/products/barcode', async (req, res) => {
               name: 'Padrão',
               price: item.price_info?.[0]?.current_price || 0,
               stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-              cost: costMap['0'] || 0
+              cost: costMap['0'] || 0,
+              barcode: barcode
             }];
           } else {
             // Shopee API failed to return item base info. Fallback to DB info.
@@ -1237,7 +1274,8 @@ app.get('/api/products/barcode', async (req, res) => {
               name: 'Padrão',
               price: product.shopee_price || 0,
               stock: product.shopee_stock || 0,
-              cost: costMap['0'] || 0
+              cost: costMap['0'] || 0,
+              barcode: barcode
             }];
           }
         }
