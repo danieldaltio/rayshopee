@@ -1218,7 +1218,7 @@ app.get('/api/products/barcode', async (req, res) => {
         // If no variations, use item-level data
         if (variations.length === 0) {
           const detailRes = await shopeeGet('/api/v2/product/get_item_base_info', {
-            item_id_list: product.item_id,
+            item_id_list: String(product.item_id),
           });
           const itemList = detailRes.response?.item_list || [];
           if (itemList.length > 0) {
@@ -1230,11 +1230,20 @@ app.get('/api/products/barcode', async (req, res) => {
               stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0,
               cost: costMap['0'] || 0
             }];
+          } else {
+            // Shopee API failed to return item base info. Fallback to DB info.
+            variations = [{
+              variationId: '0',
+              name: 'Padrão',
+              price: product.shopee_price || 0,
+              stock: product.shopee_stock || 0,
+              cost: costMap['0'] || 0
+            }];
           }
         }
         
         return res.json({
-          itemId: product.item_id,
+          itemId: String(product.item_id),
           itemName: product.name,
           variations
         });
