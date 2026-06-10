@@ -1367,12 +1367,34 @@ app.get('/api/products/barcode', async (req, res) => {
           
           const item = detailRes.response?.item;
           if (item) {
-            const variations = [{
-              variationId: '0',
-              name: 'Padrão',
-              price: item.price_info?.[0]?.current_price || 0,
-              stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0
-            }];
+            const modelRes = await shopeeGet('/api/v2/product/get_model_list', { item_id: item.item_id });
+            const models = modelRes.response?.model || [];
+
+            let costMap = {};
+            if (supabase) {
+              const { data: costData } = await supabase.from('products').select('model_id, cost').eq('item_id', item.item_id);
+              if (costData) {
+                costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
+              }
+            }
+
+            const variations = models.map(m => ({
+              variationId: String(m.model_id),
+              name: m.model_name || 'Padrão',
+              price: m.price_info?.[0]?.current_price || 0,
+              stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+              cost: costMap[String(m.model_id)] || 0
+            }));
+
+            if (variations.length === 0) {
+              variations.push({
+                variationId: '0',
+                name: 'Padrão',
+                price: item.price_info?.[0]?.current_price || 0,
+                stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+                cost: costMap['0'] || 0
+              });
+            }
             
             // Save to cache
             if (supabase) {
@@ -1615,12 +1637,34 @@ app.get('/api/products/barcode', async (req, res) => {
           
           const shopeeItem = detailRes.response?.item;
           if (shopeeItem && shopeeItem.gtin_code === barcode) {
-            const variations = [{
-              variationId: '0',
-              name: 'Padrão',
-              price: shopeeItem.price_info?.[0]?.current_price || 0,
-              stock: shopeeItem.stock_info_v2?.seller_stock?.[0]?.stock || 0
-            }];
+            const modelRes = await shopeeGet('/api/v2/product/get_model_list', { item_id: shopeeItem.item_id });
+            const models = modelRes.response?.model || [];
+
+            let costMap = {};
+            if (supabase) {
+              const { data: costData } = await supabase.from('products').select('model_id, cost').eq('item_id', shopeeItem.item_id);
+              if (costData) {
+                costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
+              }
+            }
+
+            const variations = models.map(m => ({
+              variationId: String(m.model_id),
+              name: m.model_name || 'Padrão',
+              price: m.price_info?.[0]?.current_price || 0,
+              stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+              cost: costMap[String(m.model_id)] || 0
+            }));
+
+            if (variations.length === 0) {
+              variations.push({
+                variationId: '0',
+                name: 'Padrão',
+                price: shopeeItem.price_info?.[0]?.current_price || 0,
+                stock: shopeeItem.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+                cost: costMap['0'] || 0
+              });
+            }
             
             // Save to cache
             if (supabase) {
@@ -1661,6 +1705,35 @@ app.get('/api/products/barcode', async (req, res) => {
     const shopeeItem = detailRes.response?.item;
     if (!shopeeItem) {
       return res.status(404).json({ error: 'not_found', message: 'Produto não encontrado' });
+    }
+
+    const modelRes = await shopeeGet('/api/v2/product/get_model_list', { item_id: shopeeItem.item_id });
+    const models = modelRes.response?.model || [];
+
+    let costMap = {};
+    if (supabase) {
+      const { data: costData } = await supabase.from('products').select('model_id, cost').eq('item_id', shopeeItem.item_id);
+      if (costData) {
+        costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
+      }
+    }
+
+    const variations = models.map(m => ({
+      variationId: String(m.model_id),
+      name: m.model_name || 'Padrão',
+      price: m.price_info?.[0]?.current_price || 0,
+      stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+      cost: costMap[String(m.model_id)] || 0
+    }));
+
+    if (variations.length === 0) {
+      variations.push({
+        variationId: '0',
+        name: 'Padrão',
+        price: shopeeItem.price_info?.[0]?.current_price || 0,
+        stock: shopeeItem.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+        cost: costMap['0'] || 0
+      });
     }
 
     res.json({
