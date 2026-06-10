@@ -1132,7 +1132,7 @@ app.get('/api/products/item/:itemId', async (req, res) => {
         .select('model_id, cost')
         .eq('item_id', itemId);
       if (costData) {
-        costData.forEach(p => { costMap[p.model_id] = p.cost; });
+        costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
       }
     }
 
@@ -1141,16 +1141,16 @@ app.get('/api/products/item/:itemId', async (req, res) => {
       name: m.model_name || 'Padrão',
       price: m.price_info?.[0]?.current_price || 0,
       stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-      cost: costMap[m.model_id] || 0
+      cost: costMap[String(m.model_id)] || 0
     }));
 
     if (variations.length === 0) {
       variations.push({
         variationId: '0',
         name: 'Padrão',
-        price: 0,
+        price: itemDetail.price_info?.[0]?.current_price || 0,
         stock: itemDetail.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-        cost: costMap[0] || 0
+        cost: costMap['0'] || 0
       });
     }
 
@@ -1203,7 +1203,7 @@ app.get('/api/products/barcode', async (req, res) => {
         const costMap = {};
         if (costData) {
           costData.forEach(p => {
-            costMap[p.model_id] = p.cost;
+            costMap[String(p.model_id)] = Number(p.cost) || 0;
           });
         }
         
@@ -1212,7 +1212,7 @@ app.get('/api/products/barcode', async (req, res) => {
           name: m.model_name || 'Padrão',
           price: m.price_info?.[0]?.current_price || 0,
           stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-          cost: costMap[m.model_id] || 0
+          cost: costMap[String(m.model_id)] || 0
         }));
         
         // If no variations, use item-level data
@@ -1228,7 +1228,7 @@ app.get('/api/products/barcode', async (req, res) => {
               name: 'Padrão',
               price: item.price_info?.[0]?.current_price || 0,
               stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0,
-              cost: costMap[0] || 0
+              cost: costMap['0'] || 0
             }];
           }
         }
@@ -1309,18 +1309,30 @@ app.get('/api/products/barcode', async (req, res) => {
             item_id: parseInt(barcode),
           });
           const models = modelRes.response?.model || [];
+          
+          let costMap = {};
+          if (supabase) {
+            const { data: costData } = await supabase.from('products').select('model_id, cost').eq('item_id', itemDetail.item_id);
+            if (costData) {
+              costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
+            }
+          }
+
           const variations = models.map(m => ({
             variationId: String(m.model_id),
             name: m.model_name || 'Padrão',
             price: m.price_info?.[0]?.current_price || 0,
-            stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0
+            stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+            cost: costMap[String(m.model_id)] || 0
           }));
+          
           if (variations.length === 0) {
             variations.push({
               variationId: '0',
               name: 'Padrão',
               price: itemDetail.price_info?.[0]?.current_price || 0,
-              stock: itemDetail.stock_info_v2?.seller_stock?.[0]?.stock || 0
+              stock: itemDetail.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+              cost: costMap['0'] || 0
             });
           }
           return res.json({
@@ -1332,7 +1344,6 @@ app.get('/api/products/barcode', async (req, res) => {
       } catch (itemErr) {
         console.error('[barcode] item_id lookup error:', itemErr.message);
       }
-      return res.status(404).json({ error: 'not_found', message: 'Produto não encontrado' });
     }
 
     // Try to find by GTIN using get_ssp_list
@@ -1418,24 +1429,33 @@ app.get('/api/products/barcode', async (req, res) => {
           });
           const models = modelRes.response?.model || [];
           
-          const variations = dbProducts
-            .filter(p => p.item_id === item.item_id)
-            .map(p => ({
-              variationId: String(p.model_id),
-              name: p.variation_name || 'Padrão',
-              price: p.shopee_price || 0,
-              stock: p.shopee_stock || 0
-            }));
+          let costMap = {};
+          dbProducts.forEach(p => {
+            costMap[String(p.model_id)] = Number(p.cost) || 0;
+          });
+
+          const variations = models.map(m => ({
+            variationId: String(m.model_id),
+            name: m.model_name || 'Padrão',
+            price: m.price_info?.[0]?.current_price || 0,
+            stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+            cost: costMap[String(m.model_id)] || 0
+          }));
           
-          return res.json({
-            itemId: String(item.item_id),
-            itemName: item.item_name,
-            variations: variations.length > 0 ? variations : [{
+          if (variations.length === 0) {
+            variations.push({
               variationId: '0',
               name: 'Padrão',
               price: item.price_info?.[0]?.current_price || 0,
-              stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0
-            }]
+              stock: item.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+              cost: costMap['0'] || 0
+            });
+          }
+
+          return res.json({
+            itemId: String(item.item_id),
+            itemName: item.item_name,
+            variations
           });
         }
       }
@@ -1476,11 +1496,20 @@ app.get('/api/products/barcode', async (req, res) => {
           });
           const models = modelRes.response?.model || [];
 
+          let costMap = {};
+          if (supabase) {
+            const { data: costData } = await supabase.from('products').select('model_id, cost').eq('item_id', itemDetail.item_id);
+            if (costData) {
+              costData.forEach(p => { costMap[String(p.model_id)] = Number(p.cost) || 0; });
+            }
+          }
+
           const variations = models.map(m => ({
             variationId: String(m.model_id),
             name: m.model_name || 'Padrão',
             price: m.price_info?.[0]?.current_price || 0,
-            stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0
+            stock: m.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+            cost: costMap[String(m.model_id)] || 0
           }));
 
           if (variations.length === 0) {
@@ -1488,7 +1517,8 @@ app.get('/api/products/barcode', async (req, res) => {
               variationId: '0',
               name: 'Padrão',
               price: itemDetail.price_info?.[0]?.current_price || 0,
-              stock: itemDetail.stock_info_v2?.seller_stock?.[0]?.stock || 0
+              stock: itemDetail.stock_info_v2?.seller_stock?.[0]?.stock || 0,
+              cost: costMap['0'] || 0
             });
           }
 
