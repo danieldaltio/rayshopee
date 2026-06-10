@@ -59,7 +59,8 @@ data class VariationResponse(
     val name: String = "",
     val price: Double = 0.0,
     val stock: Int = 0,
-    val cost: Double = 0.0
+    val cost: Double = 0.0,
+    val barcode: String = ""
 )
 
 @Serializable
@@ -81,10 +82,15 @@ data class UpdateStockRequest(
 
 @Singleton
 class ProductRepositoryImpl @Inject constructor() : ProductRepository {
+
+    override suspend fun syncPendingActions(): Boolean {
+        // Feature disabled temporarily
+        return true
+    }
     
     companion object {
-        // Render Production URL
-        private const val BASE_URL = "https://rayshopee.onrender.com"
+        // Local IP address since tunnels are failing
+        private const val BASE_URL = "http://192.168.15.7:3003"
     }
     
     private val json = Json {
@@ -155,7 +161,8 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
                         name = v.name,
                         price = v.price,
                         stock = v.stock,
-                        cost = v.cost
+                        cost = v.cost,
+                        barcode = v.barcode
                     )
                 }
             )
@@ -177,7 +184,8 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
                         name = v.name,
                         price = v.price,
                         stock = v.stock,
-                        cost = v.cost
+                        cost = v.cost,
+                        barcode = v.barcode
                     )
                 }
             )

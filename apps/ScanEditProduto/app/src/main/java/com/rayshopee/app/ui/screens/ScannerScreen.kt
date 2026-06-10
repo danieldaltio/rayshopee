@@ -14,6 +14,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -101,6 +102,7 @@ fun ScannerScreen(
                             TextButton(onClick = { 
                                 viewModel.processIntent(ScannerIntent.ClearProduct)
                                 manualInput = ""
+                                panelExpanded = false
                             }) { Text("Limpar") }
                         }
                         IconButton(onClick = { panelExpanded = !panelExpanded }) {
@@ -236,12 +238,26 @@ fun VariationEditor(
         costText.replace(",", ".").toDoubleOrNull() ?: variation.cost
     )
     
+    val context = LocalContext.current
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(variation.name, fontWeight = FontWeight.Bold)
+            if (variation.barcode.isNotBlank()) {
+                Text(
+                    text = "📋 ${variation.barcode}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clickable {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("Barcode", variation.barcode)
+                        clipboard.setPrimaryClip(clip)
+                    }.padding(top = 4.dp, bottom = 4.dp)
+                )
+            }
             
             Spacer(modifier = Modifier.height(8.dp))
             
@@ -278,7 +294,11 @@ fun VariationEditor(
                             singleLine = true
                         )
                     } else {
-                        Text(variation.stock.toString(), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            variation.stock.toString(), 
+                            fontWeight = FontWeight.Bold, 
+                            color = if (variation.stock == 0) Color(0xFFF44336) else if (variation.stock < 5) Color(0xFFF48FB1) else MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -316,7 +336,7 @@ fun VariationEditor(
                         if (variation.cost <= 0) "Defina custo" 
                         else "R$ ${String.format("%.2f", profit)} (${String.format("%.1f", margin)}%)",
                         fontWeight = FontWeight.Bold,
-                        color = if (profit > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        color = if (profit > 0) Color(0xFF4CAF50) else Color(0xFFF44336)
                     )
                 }
             }
