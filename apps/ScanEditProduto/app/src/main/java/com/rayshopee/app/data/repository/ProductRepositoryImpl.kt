@@ -22,8 +22,8 @@ import kotlinx.serialization.json.Json
 
 // Backup URLs para fallback
 private val FALLBACK_URLS = listOf(
-    "https://rayshopee.loca.lt",
-    "https://rayshopee-dev.loca.lt"
+    "https://rayshopee.vercel.app",
+    "https://rayshopee.loca.lt"
 )
 
 interface ShopeeApi {
@@ -89,8 +89,8 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
     }
     
     companion object {
-        // Local IP address since tunnels are failing
-        private const val BASE_URL = "http://192.168.15.7:3003"
+        // Vercel deployment URL
+        private const val BASE_URL = "https://rayshopee.vercel.app"
     }
     
     private val json = Json {
