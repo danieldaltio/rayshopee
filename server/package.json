@@ -9,10 +9,12 @@
     "dev": "node --watch index.js"
   },
   "dependencies": {
-    "node-mde": "^0.14.13",
-    "express": "^4.21.0",
+    "@supabase/supabase-js": "^2.108.1",
+    "archiver": "^7.0.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "archiver": "^7.0.1"
+    "express": "^4.21.0",
+    "node-mde": "^0.14.13",
+    "selfsigned": "^5.5.0"
   }
 }
