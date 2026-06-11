@@ -10,4 +10,5 @@ interface ProductRepository {
     suspend fun updatePrice(itemId: String, variationId: String, price: Double): Result<Unit>
     suspend fun updateStock(itemId: String, variationId: String, stock: Int): Result<Unit>
     suspend fun updateCost(itemId: String, variationId: String, cost: Double): Result<Unit>
+    suspend fun checkHealth(): Boolean
 }

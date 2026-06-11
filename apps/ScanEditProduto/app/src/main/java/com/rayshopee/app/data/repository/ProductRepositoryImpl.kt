@@ -124,22 +124,50 @@ class ProductRepositoryImpl @Inject constructor(
         var lastException: Exception? = null
 
         for (url in FALLBACK_URLS) {
-            try {
-                val newUrl = request.url.newBuilder()
-                    .scheme("https")
-                    .host(url.replace("https://", "").replace("http://", ""))
-                    .build()
-                
-                val newRequest = request.newBuilder().url(newUrl).build()
-                
-                lastResponse?.close()
-                lastResponse = chain.proceed(newRequest)
-                
-                if (lastResponse.isSuccessful) {
-                    return@Interceptor lastResponse
+            val targetHost = url.replace("https://", "").replace("http://", "")
+            var attempts = 0
+            val maxAttempts = 3
+            var delayMs = 1000L
+
+            while (attempts < maxAttempts) {
+                attempts++
+                try {
+                    val newUrl = request.url.newBuilder()
+                        .scheme("https")
+                        .host(targetHost)
+                        .build()
+                    
+                    val newRequest = request.newBuilder().url(newUrl).build()
+                    
+                    lastResponse?.close()
+                    lastResponse = chain.proceed(newRequest)
+                    
+                    if (lastResponse.isSuccessful) {
+                        return@Interceptor lastResponse
+                    }
+                    
+                    // Se o erro for do servidor (502, 503, 504), vale a pena tentar novamente
+                    val code = lastResponse.code
+                    if (code != 502 && code != 503 && code != 504) {
+                        break
+                    }
+                } catch (e: java.io.IOException) {
+                    lastException = e
+                    // Se for UnknownHostException (sem internet / sem DNS), não adianta tentar novamente esta URL
+                    if (e is java.net.UnknownHostException) {
+                        break
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    break
                 }
-            } catch (e: Exception) {
-                lastException = e
+
+                if (attempts < maxAttempts) {
+                    try {
+                        Thread.sleep(delayMs)
+                    } catch (_: InterruptedException) {}
+                    delayMs *= 2
+                }
             }
         }
         
@@ -319,6 +347,15 @@ class ProductRepositoryImpl @Inject constructor(
             )
             enqueueSync()
             Result.success(Unit)
+        }
+    }
+
+    override suspend fun checkHealth(): Boolean {
+        return try {
+            api.wakeUp()
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 }

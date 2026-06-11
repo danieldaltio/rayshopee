@@ -73,11 +73,11 @@ Após a implementação das 4 fases de resiliência (Monitoramento Sentry, Offli
 3. **[CONCLUÍDO] Timestamp no cache offline**
    - Mostrar no banner de warning há quanto tempo o dado foi salvo (ex: "⚠️ Sem conexão — dados de há 15 minutos"). Implementado adicionando `lastSyncedAt: Long` ao `ProductEntity` (Room DB versão 3), `Product` e calculando o tempo relativo no `ScannerViewModel`.
 
-4. **Retry automático com backoff exponencial**
-   - O `FallbackInterceptor` atual tenta cada URL uma única vez. Implementar retry com backoff (1s, 2s, 4s) antes de desistir e ir para o cache.
+4. **[CONCLUÍDO] Retry automático com backoff exponencial**
+   - O `FallbackInterceptor` tenta cada URL com tentativas consecutivas (máximo 3 por URL) e backoff exponencial (1s, 2s, 4s) para contornar falhas intermitentes de rede ou cold start do servidor antes de ir para o cache offline.
 
-5. **Health check visual na tela principal**
-   - Um ícone de status (🟢 online / 🔴 offline) na TopAppBar indicando se o backend está acessível, usando o endpoint `/api/wakeup`.
+5. **[CONCLUÍDO] Health check visual na tela principal**
+   - Adicionado indicador visual de status (🟢 Online / 🔴 Offline / 🟡...) na TopAppBar da tela principal, realizando checagens a cada 30 segundos ou dinamicamente com base nas interações de busca do usuário.
 
 ### Prioridade Baixa
 6. **Habilitar ProGuard/R8 no release build**

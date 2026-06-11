@@ -27,7 +27,8 @@ data class ScannerUiState(
     val error: String? = null,
     val warning: String? = null,
     val lastScannedBarcode: String? = null,
-    val isUpdating: Boolean = false
+    val isUpdating: Boolean = false,
+    val isOnline: Boolean? = null
 )
 
 @HiltViewModel
@@ -40,6 +41,20 @@ class ScannerViewModel @Inject constructor(
 
     private var lastScannedTime = 0L
     private val scanCooldown = 2000L
+
+    init {
+        checkHealthPeriodically()
+    }
+
+    private fun checkHealthPeriodically() {
+        viewModelScope.launch {
+            while (true) {
+                val online = productRepository.checkHealth()
+                _uiState.value = _uiState.value.copy(isOnline = online)
+                kotlinx.coroutines.delay(30000L)
+            }
+        }
+    }
 
     fun processIntent(intent: ScannerIntent) {
         when (intent) {
@@ -70,7 +85,13 @@ class ScannerViewModel @Inject constructor(
                             val timeAgo = formatTimeAgo(p.lastSyncedAt)
                             "⚠️ Sem conexão — dados de $timeAgo"
                         } else null
-                        _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null, warning = warning)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            product = p,
+                            error = null,
+                            warning = warning,
+                            isOnline = !p.isFromCache
+                        )
                     },
                     onFailure = { e ->
                         val msg = when {
@@ -79,7 +100,13 @@ class ScannerViewModel @Inject constructor(
                             e.message?.contains("fallback", ignoreCase = true) == true -> "Nenhum servidor disponível"
                             else -> "Erro: ${e.message}"
                         }
-                        _uiState.value = _uiState.value.copy(isLoading = false, error = msg, product = null, warning = null)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = msg,
+                            product = null,
+                            warning = null,
+                            isOnline = false
+                        )
                     }
                 )
             } catch (e: Exception) {
@@ -101,7 +128,13 @@ class ScannerViewModel @Inject constructor(
                             val timeAgo = formatTimeAgo(p.lastSyncedAt)
                             "⚠️ Sem conexão — dados de $timeAgo"
                         } else null
-                        _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null, warning = warning)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            product = p,
+                            error = null,
+                            warning = warning,
+                            isOnline = !p.isFromCache
+                        )
                     },
                     onFailure = { e ->
                         val msg = when {
@@ -109,7 +142,13 @@ class ScannerViewModel @Inject constructor(
                             e is java.net.SocketTimeoutException -> "Servidor demorou para responder"
                             else -> "Erro: ${e.message}"
                         }
-                        _uiState.value = _uiState.value.copy(isLoading = false, error = msg, product = null, warning = null)
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            error = msg,
+                            product = null,
+                            warning = null,
+                            isOnline = false
+                        )
                     }
                 )
             } catch (e: Exception) {
@@ -192,7 +231,7 @@ class ScannerViewModel @Inject constructor(
     }
 
     private fun clearProduct() {
-        _uiState.value = ScannerUiState()
+        _uiState.value = ScannerUiState(isOnline = _uiState.value.isOnline)
     }
 
     private fun formatTimeAgo(timestamp: Long): String {

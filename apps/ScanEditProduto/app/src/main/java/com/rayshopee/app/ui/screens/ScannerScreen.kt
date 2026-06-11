@@ -67,7 +67,32 @@ fun ScannerScreen(
         topBar = {
             TopAppBar(
                 title = { Text("RayShopee Scanner", fontWeight = FontWeight.Bold, color = Color.White) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
+                actions = {
+                    val statusText = when (uiState.isOnline) {
+                        true -> "🟢 Online"
+                        false -> "🔴 Offline"
+                        null -> "🟡..."
+                    }
+                    val statusColor = when (uiState.isOnline) {
+                        true -> Color(0xFF4CAF50)
+                        false -> Color(0xFFF44336)
+                        null -> Color(0xFFFFEB3B)
+                    }
+                    Surface(
+                        color = statusColor.copy(alpha = 0.15f),
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.padding(end = 16.dp)
+                    ) {
+                        Text(
+                            text = statusText,
+                            color = statusColor,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
             )
         }
     ) { padding ->
