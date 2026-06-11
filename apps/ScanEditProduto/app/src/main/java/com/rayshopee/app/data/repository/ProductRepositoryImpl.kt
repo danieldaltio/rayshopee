@@ -20,6 +20,15 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 
+import android.content.Context
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import com.rayshopee.app.data.local.AppDatabase
+import com.rayshopee.app.data.local.PendingActionEntity
+import com.rayshopee.app.data.local.ProductEntity
+import com.rayshopee.app.data.worker.SyncWorker
+import dagger.hilt.android.qualifiers.ApplicationContext
+
 // Backup URLs para fallback
 private val FALLBACK_URLS = listOf(
     "https://rayshopee.vercel.app",
@@ -81,9 +90,12 @@ data class UpdateStockRequest(
 )
 
 @Singleton
-class ProductRepositoryImpl @Inject constructor() : ProductRepository {
+class ProductRepositoryImpl @Inject constructor(
+    private val db: AppDatabase,
+    @ApplicationContext private val context: Context
+) : ProductRepository {
 
-    override suspend fun syncPendingActions(): Boolean {
+    suspend fun syncPendingActions(): Boolean {
         // Feature disabled temporarily
         return true
     }
@@ -103,11 +115,39 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
             .build()
         chain.proceed(request)
     }
+    private val fallbackInterceptor = Interceptor { chain ->
+        var request = chain.request()
+        var response: okhttp3.Response? = null
+        var lastException: Exception? = null
+
+        for (url in FALLBACK_URLS) {
+            try {
+                val newUrl = request.url.newBuilder()
+                    .scheme("https")
+                    .host(url.replace("https://", "").replace("http://", ""))
+                    .build()
+                
+                request = request.newBuilder().url(newUrl).build()
+                response = chain.proceed(request)
+                
+                if (response.isSuccessful) {
+                    return@Interceptor response
+                } else {
+                    response.close()
+                }
+            } catch (e: Exception) {
+                lastException = e
+            }
+        }
+        
+        throw lastException ?: java.net.UnknownHostException("All fallback URLs failed")
+    }
     
     private fun createClient(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(45, TimeUnit.SECONDS) // Increased for Render cold start
         .readTimeout(45, TimeUnit.SECONDS)
         .addInterceptor(bypassHeaders)
+        .addInterceptor(fallbackInterceptor)
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         })
@@ -129,28 +169,9 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
         } catch (_: Exception) {}
     }
     
-    private suspend fun <T> withRetry(block: suspend () -> T): T {
-        var lastError: Exception? = null
-        repeat(3) { attempt ->
-            try {
-                return block()
-            } catch (e: Exception) {
-                lastError = e
-                if (attempt < 2) {
-                    kotlinx.coroutines.delay(2000L * (attempt + 1))
-                }
-            }
-        }
-        throw when (lastError) {
-            is java.net.UnknownHostException -> Exception("Não foi possível localizar o servidor (DNS). Verifique sua conexão com a internet.")
-            is java.net.SocketTimeoutException -> Exception("O servidor demorou muito para responder (Cold Start). Tente novamente em alguns segundos.")
-            else -> lastError ?: Exception("Erro desconhecido")
-        }
-    }
-    
-    override suspend fun searchByBarcode(barcode: String): Result<Product> = withRetry {
-        warmUp()
-        try {
+    override suspend fun searchByBarcode(barcode: String): Result<Product> {
+        return try {
+            warmUp()
             val response = api.searchByBarcode(barcode)
             val product = Product(
                 itemId = response.itemId,
@@ -166,14 +187,32 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
                     )
                 }
             )
+            // Cache localmente
+            db.productDao().insertProduct(ProductEntity(
+                itemId = product.itemId,
+                itemName = product.itemName,
+                barcode = barcode,
+                variations = product.variations
+            ))
             Result.success(product)
         } catch (e: Exception) {
-            Result.failure(e)
+            // Tenta pegar do cache
+            val cached = db.productDao().getProductByBarcode(barcode)
+            if (cached != null) {
+                Result.success(Product(
+                    itemId = cached.itemId,
+                    itemName = cached.itemName,
+                    variations = cached.variations
+                ))
+            } else {
+                Result.failure(e)
+            }
         }
     }
 
     override suspend fun searchByItemId(itemId: String): Result<Product> {
         return try {
+            warmUp()
             val response = api.searchByItemId(itemId)
             val product = Product(
                 itemId = response.itemId,
@@ -189,10 +228,31 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
                     )
                 }
             )
+            // Cache localmente
+            db.productDao().insertProduct(ProductEntity(
+                itemId = product.itemId,
+                itemName = product.itemName,
+                barcode = null, // Não temos certeza do barcode principal aqui
+                variations = product.variations
+            ))
             Result.success(product)
         } catch (e: Exception) {
-            Result.failure(e)
+            val cached = db.productDao().getProductByItemId(itemId)
+            if (cached != null) {
+                Result.success(Product(
+                    itemId = cached.itemId,
+                    itemName = cached.itemName,
+                    variations = cached.variations
+                ))
+            } else {
+                Result.failure(e)
+            }
         }
+    }
+
+    private fun enqueueSync() {
+        val workRequest = OneTimeWorkRequestBuilder<SyncWorker>().build()
+        WorkManager.getInstance(context).enqueue(workRequest)
     }
 
     override suspend fun updatePrice(itemId: String, variationId: String, price: Double): Result<Unit> {
@@ -201,7 +261,17 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
             if (response.success) Result.success(Unit)
             else Result.failure(Exception(response.message))
         } catch (e: Exception) {
-            Result.failure(e)
+            // Salva pendência
+            db.productDao().insertPendingAction(
+                PendingActionEntity(
+                    itemId = itemId,
+                    variationId = variationId,
+                    actionType = "UPDATE_PRICE",
+                    value = price
+                )
+            )
+            enqueueSync()
+            Result.success(Unit) // Retorna sucesso falso pro app continuar offline
         }
     }
 
@@ -211,7 +281,16 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
             if (response.success) Result.success(Unit)
             else Result.failure(Exception(response.message))
         } catch (e: Exception) {
-            Result.failure(e)
+            db.productDao().insertPendingAction(
+                PendingActionEntity(
+                    itemId = itemId,
+                    variationId = variationId,
+                    actionType = "UPDATE_STOCK",
+                    value = stock.toDouble()
+                )
+            )
+            enqueueSync()
+            Result.success(Unit)
         }
     }
 
@@ -221,7 +300,16 @@ class ProductRepositoryImpl @Inject constructor() : ProductRepository {
             if (response.success) Result.success(Unit)
             else Result.failure(Exception(response.message))
         } catch (e: Exception) {
-            Result.failure(e)
+            db.productDao().insertPendingAction(
+                PendingActionEntity(
+                    itemId = itemId,
+                    variationId = variationId,
+                    actionType = "UPDATE_COST",
+                    value = cost
+                )
+            )
+            enqueueSync()
+            Result.success(Unit)
         }
     }
 }

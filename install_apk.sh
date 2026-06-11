@@ -10,7 +10,7 @@ echo "=========================================="
 echo ""
 
 # Verificar se está no diretório correto
-if [ ! -f "RayShopeeAndroid/app/build/outputs/apk/debug/app-debug.apk" ]; then
+if [ ! -f "apps/ScanEditProduto/app/build/outputs/apk/debug/app-debug.apk" ]; then
     echo "⚠️  APK não encontrado!"
     echo "Executando build..."
     cd RayShopee

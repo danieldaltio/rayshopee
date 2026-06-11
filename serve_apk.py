@@ -19,7 +19,7 @@ import os
 
 # Configuração
 PORT = 8080
-APK_DIR = "RayShopeeAndroid/app/build/outputs/apk/debug"
+APK_DIR = "apps/ScanEditProduto/app/build/outputs/apk/debug"
 
 # Mudar para o diretório do APK
 os.chdir(APK_DIR)

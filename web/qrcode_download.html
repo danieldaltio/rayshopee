@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code - RayShopee APK</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 40px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        h1 { color: #333; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        #qrcode { margin: 20px 0; }
+        .url { 
+            color: #0066cc; 
+            word-break: break-all; 
+            font-size: 12px;
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+        .btn {
+            background: #0066cc;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px 5px;
+        }
+        .btn:hover { background: #0052a3; }
+        .btn-download { background: #28a745; }
+        .btn-download:hover { background: #218838; }
+        .info {
+            color: #666;
+            font-size: 13px;
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 6px;
+            text-align: left;
+        }
+        .download-btn {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            margin: 10px 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 RayShopee Android</h1>
+        <p class="subtitle">Escaneie o QR code para baixar o APK</p>
+        
+        <div id="qrcode"></div>
+        
+        <div class="url" id="downloadUrl">http://localhost:8080/app-debug.apk</div>
+        
+        <a href="http://localhost:8080/app-debug.apk" class="btn btn-download" download="RayShopee-debug.apk">
+            📥 Baixar APK Direto
+        </a>
+        
+        <a href="#" class="btn" onclick="downloadQRCode()">
+            💾 Salvar QR Code como PNG
+        </a>
+        
+        <div class="info">
+            <p><strong>📋 Instruções:</strong></p>
+            <p>1. Escaneie o QR code com a câmera do seu Android 16</p>
+            <p>2. Ou clique em "Baixar APK Direto"</p>
+            <p>3. Vá em Configurações → Segurança</p>
+            <p>4. Ative "Instalar apps desconhecidos"</p>
+            <p>5. Abra o APK e instale</p>
+            <br>
+            <p><strong>ℹ️ Versão:</strong> 1.0.0 Debug</p>
+            <p><strong>📦 Tamanho:</strong> 42.4 MB</p>
+            <p><strong>🔧 Build:</strong> 7982a42</p>
+        </div>
+    </div>
+    
+    <script>
+        const downloadUrl = 'http://localhost:8080/app-debug.apk';
+        
+        // Gerar QR Code
+        QRCode.toCanvas(document.getElementById('qrcode'), downloadUrl, {
+            width: 250,
+            margin: 2,
+            color: {
+                dark: '#0066cc',
+                light: '#ffffff'
+            }
+        }, function (error) {
+            if (error) {
+                console.error('Erro ao gerar QR code:', error);
+                document.getElementById('qrcode').innerHTML = 
+                    '<p style="color: #dc3545;">❌ Erro ao gerar QR code</p>';
+            } else {
+                console.log('QR Code gerado com sucesso!');
+            }
+        });
+        
+        // Função para baixar QR code como PNG
+        function downloadQRCode() {
+            const canvas = document.querySelector('#qrcode canvas');
+            if (canvas) {
+                const link = document.createElement('a');
+                link.download = 'qrcode-rayshopee.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                console.log('QR Code baixado!');
+            } else {
+                alert('QR Code ainda não gerado. Aguarde um momento.');
+            }
+        }
+        
+        // Testar conexão
+        fetch(downloadUrl, { method: 'HEAD' })
+            .then(r => {
+                if (r.ok) {
+                    console.log('✅ APK disponível no servidor');
+                } else {
+                    console.log('⚠️ APK não encontrado. Inicie o servidor HTTP.');
+                }
+            })
+            .catch(() => {
+                console.log('⚠️ Servidor não está rodando. Execute: python3 -m http.server 8080 --directory RayShopeeAndroid/app/build/outputs/apk/debug');
+            });
+    </script>
+</body>
+</html>

@@ -11,10 +11,23 @@ import archiver from 'archiver';
 import { tryDownloadInvoice, getXmlsFromSefazByPeriod, initSefazService } from './sefaz-service.js';
 
 import dotenv from 'dotenv';
+import * as Sentry from '@sentry/node';
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
 dotenv.config({ path: ENV_PATH });
+
+// Initialize Sentry
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  integrations: [
+    nodeProfilingIntegration(),
+  ],
+  tracesSampleRate: 1.0, 
+  profilesSampleRate: 1.0,
+});
 
 const app = express();
 
@@ -342,9 +355,20 @@ async function shopeeGet(apiPath, params = {}) {
   // Auto-refresh on auth error
   const isAuthError = data.error === 'error_auth' || data.error === 'error_token_expired' || data.error === 'invalid_acceess_token' || (data.error && String(data.error).includes('token'));
   if (isAuthError) {
-    console.log('  ⚠️  Token expired mid-request, refreshing...');
-    tokenExpiresAt = 0; // Force refresh
-    await refreshAccessToken();
+    console.log('  ⚠️  Token expired mid-request, checking Supabase for newer token...');
+    const oldToken = accessToken;
+    
+    // Check Supabase first
+    tokenExpiresAt = 0; 
+    await ensureValidToken(); 
+    
+    // If Supabase gave us the exact same token that just failed, it means the cron hasn't refreshed it yet.
+    // We must refresh it ourselves.
+    if (accessToken === oldToken) {
+        console.log('  ⚠️  Supabase token is the same, performing manual refresh...');
+        await refreshAccessToken();
+    }
+    
     const retryUrl = buildUrl(apiPath, params);
     const retryRes = await fetch(retryUrl);
     return retryRes.json();
@@ -366,9 +390,20 @@ async function shopeePost(apiPath, body = {}) {
   // Auto-refresh on auth error
   const isAuthError = data.error === 'error_auth' || data.error === 'error_token_expired' || data.error === 'invalid_acceess_token' || (data.error && String(data.error).includes('token'));
   if (isAuthError) {
-    console.log('  ⚠️  Token expired mid-request, refreshing...');
-    tokenExpiresAt = 0; // Force refresh
-    await refreshAccessToken();
+    console.log('  ⚠️  Token expired mid-request, checking Supabase for newer token...');
+    const oldToken = accessToken;
+    
+    // Check Supabase first
+    tokenExpiresAt = 0; 
+    await ensureValidToken(); 
+    
+    // If Supabase gave us the exact same token that just failed, it means the cron hasn't refreshed it yet.
+    // We must refresh it ourselves.
+    if (accessToken === oldToken) {
+        console.log('  ⚠️  Supabase token is the same, performing manual refresh...');
+        await refreshAccessToken();
+    }
+
     const retryUrl = buildUrl(apiPath);
     const retryRes = await fetch(retryUrl, {
       method: 'POST',
@@ -2910,9 +2945,31 @@ app.post('/api/products/add-gtin/:itemId', async (req, res) => {
   }
 });
 
+// Vercel Cron Job for decentralized Token Refresh
+app.get('/api/cron/refresh-token', async (req, res) => {
+  // Check CRON_SECRET for security
+  if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
+    return res.status(401).end('Unauthorized');
+  }
+  
+  try {
+    const success = await refreshAccessToken();
+    if (success) {
+      return res.status(200).json({ success: true, message: 'Token refreshed successfully via Cron' });
+    } else {
+      return res.status(500).json({ success: false, message: 'Failed to refresh token' });
+    }
+  } catch (error) {
+    Sentry.captureException(error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
 // HTTPS server (for Shopee OAuth callback) - disabled temporarily
 // https.createServer({ key: sslKey, cert: sslCert }, app).listen(HTTPS_PORT, () => {
 //   console.log(`  🔐 OAuth callback pronto em https://${AUTH_DOMAIN}:${HTTPS_PORT}/api/auth/callback`);
+// Setup Sentry error handler
+Sentry.setupExpressErrorHandler(app);
+
 // Export app for Serverless / Vercel
 export default app;
 

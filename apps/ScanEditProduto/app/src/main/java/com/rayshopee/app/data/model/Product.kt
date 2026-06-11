@@ -15,7 +15,8 @@ data class ProductVariation(
     val name: String = "",
     val price: Double = 0.0,
     val stock: Int = 0,
-    val cost: Double = 0.0
+    val cost: Double = 0.0,
+    val barcode: String = ""
 )
 
 @Serializable

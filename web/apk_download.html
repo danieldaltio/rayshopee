@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Download RayShopee APK</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 { 
+            color: #333; 
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+        }
+        #qrcode { 
+            margin: 30px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            display: inline-block;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .url { 
+            color: #4f46e5; 
+            word-break: break-all; 
+            font-size: 14px;
+            background: #f3f4f6;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+        }
+        .btn {
+            display: inline-block;
+            padding: 14px 32px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            margin: 10px 5px;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+        }
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+        .info {
+            background: #f8fafc;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 30px;
+            text-align: left;
+        }
+        .info h3 {
+            color: #333;
+            margin-bottom: 12px;
+            font-size: 18px;
+        }
+        .info ol {
+            color: #666;
+            padding-left: 20px;
+        }
+        .info li {
+            margin-bottom: 8px;
+            line-height: 1.6;
+        }
+        .success-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #dcfce7;
+            color: #166534;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+        .file-info {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+            color: #666;
+            font-size: 14px;
+        }
+        .file-info span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        @media (max-width: 480px) {
+            .container { padding: 20px; }
+            h1 { font-size: 24px; }
+            .btn { width: 100%; margin: 10px 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-badge">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+            </svg>
+            Build Concluído com Sucesso!
+        </div>
+        
+        <h1>📱 RayShopee Android</h1>
+        <p class="subtitle">Versão 1.0.0 Debug | Build 7982a42</p>
+        
+        <div class="file-info">
+            <span>📦 42.4 MB</span>
+            <span>⏱️ Build: 40s</span>
+            <span>✅ Android 16</span>
+        </div>
+        
+        <div id="qrcode"></div>
+        
+        <div class="url" id="downloadUrl">http://localhost:8080/app-debug.apk</div>
+        
+        <div style="margin: 25px 0;">
+            <a href="http://localhost:8080/app-debug.apk" class="btn btn-primary" download="RayShopee-debug.apk">
+                📥 Baixar APK
+            </a>
+            <a href="#" class="btn btn-secondary" onclick="downloadQRCode()">
+                💾 Salvar QR Code
+            </a>
+        </div>
+        
+        <div class="info">
+            <h3>📋 Como Instalar no Android 16</h3>
+            <ol>
+                <li>Ative "Fontes Desconhecidas" em Configurações → Segurança</li>
+                <li>Escaneie o QR code com seu celular</li>
+                <li>Baixe o arquivo APK</li>
+                <li>Abra o arquivo e clique em "Instalar"</li>
+                <li>Abra o app após a instalação</li>
+            </ol>
+            <p style="margin-top: 12px; color: #9ca3af; font-size: 13px;">
+                <strong>Nota:</strong> Certifique-se que o servidor HTTP está rodando na porta 8080
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        const downloadUrl = document.getElementById('downloadUrl').textContent;
+        
+        // Gerar QR Code
+        QRCode.toCanvas(document.getElementById('qrcode'), downloadUrl, {
+            width: 220,
+            margin: 2,
+            color: {
+                dark: '#4f46e5',
+                light: '#ffffff'
+            }
+        }, function (error) {
+            if (error) {
+                console.error('Erro ao gerar QR code:', error);
+                document.getElementById('qrcode').innerHTML = 
+                    '<p style="color: #dc3545; padding: 20px;">❌ Erro ao gerar QR code</p>';
+            }
+        });
+        
+        // Função para baixar QR code
+        function downloadQRCode() {
+            const canvas = document.querySelector('#qrcode canvas');
+            if (canvas) {
+                const link = document.createElement('a');
+                link.download = 'qrcode-rayshopee.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                console.log('QR Code baixado!');
+            } else {
+                alert('QR Code ainda não gerado. Aguarde um momento.');
+            }
+        }
+        
+        // Testar conexão
+        fetch(downloadUrl, { method: 'HEAD' })
+            .then(r => {
+                if (r.ok) {
+                    console.log('✅ APK disponível no servidor');
+                }
+            })
+            .catch(() => {
+                console.log('⚠️ Servidor não está rodando na porta 8080');
+            });
+    </script>
+</body>
+</html>
