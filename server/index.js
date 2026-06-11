@@ -12,21 +12,15 @@ import { tryDownloadInvoice, getXmlsFromSefazByPeriod, initSefazService } from '
 
 import dotenv from 'dotenv';
 import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
 dotenv.config({ path: ENV_PATH });
 
 // Initialize Sentry
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
-  integrations: [
-    nodeProfilingIntegration(),
-  ],
   tracesSampleRate: 1.0, 
-  profilesSampleRate: 1.0,
 });
 
 const app = express();
