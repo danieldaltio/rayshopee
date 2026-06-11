@@ -70,8 +70,8 @@ Após a implementação das 4 fases de resiliência (Monitoramento Sentry, Offli
    - O Crashlytics é mais leve, integra-se nativamente ao Android, e não exige configuração de DSN complexa — basta o `google-services.json`. Isso traria monitoramento de crashes sem o risco de auto-init fatal.
 
 ### Prioridade Média
-3. **Timestamp no cache offline**
-   - Mostrar no banner de warning há quanto tempo o dado foi salvo: "⚠️ Offline — dados de 3 dias atrás". Isso requer adicionar `lastSyncedAt: Long` ao `ProductEntity`.
+3. **[CONCLUÍDO] Timestamp no cache offline**
+   - Mostrar no banner de warning há quanto tempo o dado foi salvo (ex: "⚠️ Sem conexão — dados de há 15 minutos"). Implementado adicionando `lastSyncedAt: Long` ao `ProductEntity` (Room DB versão 3), `Product` e calculando o tempo relativo no `ScannerViewModel`.
 
 4. **Retry automático com backoff exponencial**
    - O `FallbackInterceptor` atual tenta cada URL uma única vez. Implementar retry com backoff (1s, 2s, 4s) antes de desistir e ir para o cache.
