@@ -98,7 +98,7 @@ let shopId = process.env.SHOPEE_SHOP_ID || '';
 
 let accessToken = process.env.SHOPEE_ACCESS_TOKEN || '';
 let refreshToken = process.env.SHOPEE_REFRESH_TOKEN || '';
-let tokenExpiresAt = Date.now() + 4 * 60 * 60 * 1000; // Assume 4h from startup
+let tokenExpiresAt = 0; // Force token validation on cold start
 let isRefreshing = false;
 
 /**
@@ -267,6 +267,31 @@ async function refreshAccessToken() {
  * Ensure we have a valid access token before making API calls
  */
 async function ensureValidToken() {
+  // If we don't have a token or it's expired, try to load from Supabase first
+  if (tokenExpiresAt === 0 && supabase) {
+    try {
+      const targetCnpj = process.env.SEFAZ_CNPJ || '44156548000109';
+      const { data: company } = await supabase
+        .from('Company')
+        .select('shopee_access_token, shopee_refresh_token, shopee_token_expires_at')
+        .eq('cnpj', targetCnpj)
+        .maybeSingle();
+      
+      if (company && company.shopee_access_token) {
+        accessToken = company.shopee_access_token;
+        refreshToken = company.shopee_refresh_token || refreshToken;
+        const dbExpires = company.shopee_token_expires_at ? new Date(company.shopee_token_expires_at).getTime() : 0;
+        if (dbExpires > Date.now()) {
+          tokenExpiresAt = dbExpires;
+          console.log('✅ Loaded valid token from Supabase');
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Could not load token from Supabase:', err.message);
+    }
+  }
+
   // Refresh if token expires in less than 5 minutes
   if (Date.now() > tokenExpiresAt - 5 * 60 * 1000) {
     return await refreshAccessToken();
@@ -315,8 +340,10 @@ async function shopeeGet(apiPath, params = {}) {
   }
 
   // Auto-refresh on auth error
-  if (data.error === 'error_auth' || data.error === 'error_token_expired') {
+  const isAuthError = data.error === 'error_auth' || data.error === 'error_token_expired' || data.error === 'invalid_acceess_token' || (data.error && String(data.error).includes('token'));
+  if (isAuthError) {
     console.log('  ⚠️  Token expired mid-request, refreshing...');
+    tokenExpiresAt = 0; // Force refresh
     await refreshAccessToken();
     const retryUrl = buildUrl(apiPath, params);
     const retryRes = await fetch(retryUrl);
@@ -337,8 +364,10 @@ async function shopeePost(apiPath, body = {}) {
   const data = await res.json();
 
   // Auto-refresh on auth error
-  if (data.error === 'error_auth' || data.error === 'error_token_expired') {
+  const isAuthError = data.error === 'error_auth' || data.error === 'error_token_expired' || data.error === 'invalid_acceess_token' || (data.error && String(data.error).includes('token'));
+  if (isAuthError) {
     console.log('  ⚠️  Token expired mid-request, refreshing...');
+    tokenExpiresAt = 0; // Force refresh
     await refreshAccessToken();
     const retryUrl = buildUrl(apiPath);
     const retryRes = await fetch(retryUrl, {
