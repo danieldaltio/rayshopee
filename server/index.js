@@ -2884,7 +2884,7 @@ app.post('/api/products/add-gtin/:itemId', async (req, res) => {
 // https.createServer({ key: sslKey, cert: sslCert }, app).listen(HTTPS_PORT, () => {
 //   console.log(`  🔐 OAuth callback pronto em https://${AUTH_DOMAIN}:${HTTPS_PORT}/api/auth/callback`);
 // Export app for Serverless / Vercel
-module.exports = app;
+export default app;
 
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   const port = parseInt(process.env.PORT) || 3000;
