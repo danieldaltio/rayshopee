@@ -18,17 +18,10 @@ import('./sefaz-service.js').then(module => {
 });
 
 import dotenv from 'dotenv';
-import * as Sentry from '@sentry/node';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ENV_PATH = process.env.ENV_PATH || path.join(__dirname, '..', '.env');
 dotenv.config({ path: ENV_PATH });
-
-// Initialize Sentry
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  tracesSampleRate: 1.0, 
-});
 
 const app = express();
 
@@ -2980,8 +2973,7 @@ app.get('/api/cron/refresh-token', async (req, res) => {
 // HTTPS server (for Shopee OAuth callback) - disabled temporarily
 // https.createServer({ key: sslKey, cert: sslCert }, app).listen(HTTPS_PORT, () => {
 //   console.log(`  🔐 OAuth callback pronto em https://${AUTH_DOMAIN}:${HTTPS_PORT}/api/auth/callback`);
-// Setup Sentry error handler
-Sentry.setupExpressErrorHandler(app);
+// The error handler must be before any other error middleware and after all controllers
 
 // Export app for Serverless / Vercel
 export default app;
