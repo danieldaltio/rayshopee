@@ -26,14 +26,14 @@ class SyncWorker @AssistedInject constructor(
 
             var allSuccess = true
             for (action in pendingActions) {
-                val result = when (action.actionType) {
+                val kotlinResult: kotlin.Result<Unit> = when (action.actionType) {
                     "UPDATE_PRICE" -> repository.updatePrice(action.itemId, action.variationId, action.value)
                     "UPDATE_STOCK" -> repository.updateStock(action.itemId, action.variationId, action.value.toInt())
                     "UPDATE_COST" -> repository.updateCost(action.itemId, action.variationId, action.value)
-                    else -> Result.failure(Exception("Unknown action type"))
+                    else -> kotlin.Result.failure(Exception("Unknown action type"))
                 }
 
-                if (result.isSuccess) {
+                if (kotlinResult.isSuccess) {
                     db.productDao().deletePendingAction(action.id)
                 } else {
                     allSuccess = false
