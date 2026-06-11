@@ -2759,7 +2759,6 @@ app.post('/api/products/sync-ean', async (req, res) => {
 // ============================================================
 //  GENERATE SELF-SIGNED CERTIFICATE
 // ============================================================
-if (!process.env.VERCEL) {
 const CERTS_DIR = path.join(__dirname, 'certs');
 if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
 
@@ -2799,8 +2798,6 @@ if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
 // ============================================================
 
 // HTTP server
-    try {
-      const tokenPath = '/api/v2/auth/token/get';
 
 // Add product with GTIN manually
 app.post('/api/products/add-gtin/:itemId', async (req, res) => {
