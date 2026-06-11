@@ -58,6 +58,30 @@ Após a implementação das 4 fases de resiliência (Monitoramento Sentry, Offli
 - **Arquivos alterados:**
   - `server/index.js` — 6 blocos modificados
 
+### 4. Timestamp no Cache Offline (Data de Sincronismo)
+- **Ação:** Adicionado o campo `lastSyncedAt: Long` ao `ProductEntity` (Room DB versão 3) e mapeado no `Product` domain model. Ao salvar dados da API no cache local, armazena o timestamp atual. Se o app estiver offline, o `ScannerViewModel` calcula e mostra o tempo relativo (ex: "dados de há 15 minutos") no banner.
+- **Resultado:** O usuário sabe o quão atualizada está a informação offline na tela.
+- **Arquivos alterados:**
+  - `app/data/local/ProductEntity.kt` — adicionada coluna e mapeamento
+  - `app/data/local/AppDatabase.kt` — versão incrementada para 3
+  - `app/data/model/Product.kt` — adicionado `@Transient lastSyncedAt`
+  - `app/data/repository/ProductRepositoryImpl.kt` — gravação e leitura do timestamp
+  - `app/ui/screens/ScannerViewModel.kt` — cálculo de tempo relativo `formatTimeAgo`
+
+### 5. Interceptor de Fallback com Retry e Backoff Exponencial
+- **Ação:** Atualizado o `FallbackInterceptor` no OkHttp para tentar cada URL (Vercel e secundária) até 3 vezes caso ocorra falha de timeout/rede ou retorne códigos HTTP de erro de servidor (502, 503, 504), aplicando delays exponenciais (1s, 2s, 4s). Se não houver internet (ex: `UnknownHostException`), o loop para imediatamente para evitar lentidão.
+- **Resultado:** Maior resiliência contra oscilações de rede e cold starts da hospedagem sem prejudicar o tempo de resposta offline.
+- **Arquivos alterados:**
+  - `app/data/repository/ProductRepositoryImpl.kt` — retentativas com backoff no interceptor
+
+### 6. Health Check Periódico e Indicador Visual na TopAppBar
+- **Ação:** Implementado `checkHealth(): Boolean` que consulta `/api/wakeup` e configurada uma rotina periódica no `ScannerViewModel` a cada 30 segundos. A UI exibe na TopAppBar um badge colorido (`🟢 Online`, `🔴 Offline` ou `🟡...`) de acordo com a saúde do backend, que também responde em tempo real a ações de busca.
+- **Resultado:** O lojista visualiza instantaneamente no cabeçalho do app se o backend está respondendo.
+- **Arquivos alterados:**
+  - `app/data/repository/ProductRepository.kt` & `ProductRepositoryImpl.kt` — declaração e implementação de `checkHealth`
+  - `app/ui/screens/ScannerViewModel.kt` — rotina em background e gestão de estado `isOnline`
+  - `app/ui/screens/ScannerScreen.kt` — indicador visual de status na TopAppBar
+
 ---
 
 ## 🚀 Melhorias Possíveis
