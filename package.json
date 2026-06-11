@@ -16,6 +16,7 @@
     "@sentry/node": "^10.57.0",
     "@sentry/profiling-node": "^10.57.0",
     "@supabase/supabase-js": "^2.105.0",
+    "archiver": "^8.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
