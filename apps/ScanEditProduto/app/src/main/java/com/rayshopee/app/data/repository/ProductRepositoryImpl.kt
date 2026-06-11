@@ -110,14 +110,17 @@ class ProductRepositoryImpl @Inject constructor(
         isLenient = true
     }
     
-    private val bypassHeaders = { chain: okhttp3.Interceptor.Chain ->
+    private val bypassHeaders = Interceptor { chain ->
         val request = chain.request().newBuilder()
+            .header("Bypass-Tunnel-Reminder", "true")
+            .header("ngrok-skip-browser-warning", "69420")
             .build()
         chain.proceed(request)
     }
+    
     private val fallbackInterceptor = Interceptor { chain ->
-        var request = chain.request()
-        var response: okhttp3.Response? = null
+        val request = chain.request()
+        var lastResponse: okhttp3.Response? = null
         var lastException: Exception? = null
 
         for (url in FALLBACK_URLS) {
@@ -127,20 +130,20 @@ class ProductRepositoryImpl @Inject constructor(
                     .host(url.replace("https://", "").replace("http://", ""))
                     .build()
                 
-                request = request.newBuilder().url(newUrl).build()
-                response = chain.proceed(request)
+                val newRequest = request.newBuilder().url(newUrl).build()
                 
-                if (response.isSuccessful) {
-                    return@Interceptor response
-                } else {
-                    response.close()
+                lastResponse?.close()
+                lastResponse = chain.proceed(newRequest)
+                
+                if (lastResponse.isSuccessful) {
+                    return@Interceptor lastResponse
                 }
             } catch (e: Exception) {
                 lastException = e
             }
         }
         
-        throw lastException ?: java.net.UnknownHostException("All fallback URLs failed")
+        return@Interceptor lastResponse ?: throw lastException ?: java.net.UnknownHostException("All fallback URLs failed")
     }
     
     private fun createClient(): OkHttpClient = OkHttpClient.Builder()
@@ -202,7 +205,8 @@ class ProductRepositoryImpl @Inject constructor(
                 Result.success(Product(
                     itemId = cached.itemId,
                     itemName = cached.itemName,
-                    variations = cached.variations
+                    variations = cached.variations,
+                    isFromCache = true
                 ))
             } else {
                 Result.failure(e)
@@ -242,7 +246,8 @@ class ProductRepositoryImpl @Inject constructor(
                 Result.success(Product(
                     itemId = cached.itemId,
                     itemName = cached.itemName,
-                    variations = cached.variations
+                    variations = cached.variations,
+                    isFromCache = true
                 ))
             } else {
                 Result.failure(e)

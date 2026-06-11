@@ -141,6 +141,28 @@ fun ScannerScreen(
                     
                     Spacer(modifier = Modifier.height(16.dp))
                     
+                    uiState.warning?.let { warning ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    warning,
+                                    modifier = Modifier.weight(1f),
+                                    color = Color(0xFFE65100),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
                     uiState.error?.let { error ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),

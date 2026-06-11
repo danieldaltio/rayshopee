@@ -1,12 +1,14 @@
 package com.rayshopee.app.data.model
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 @Serializable
 data class Product(
     val itemId: String = "",
     val itemName: String = "",
-    val variations: List<ProductVariation> = emptyList()
+    val variations: List<ProductVariation> = emptyList(),
+    @Transient val isFromCache: Boolean = false
 )
 
 @Serializable

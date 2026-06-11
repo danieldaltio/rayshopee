@@ -95,9 +95,6 @@ dependencies {
 
     debugImplementation(libs.androidx.ui.tooling)
     
-    // Sentry SDK
-    implementation("io.sentry:sentry-android:7.14.0")
-    
     // WorkManager & Hilt Work
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.hilt:hilt-work:1.2.0")

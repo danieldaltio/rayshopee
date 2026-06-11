@@ -25,6 +25,7 @@ data class ScannerUiState(
     val isLoading: Boolean = false,
     val product: Product? = null,
     val error: String? = null,
+    val warning: String? = null,
     val lastScannedBarcode: String? = null,
     val isUpdating: Boolean = false
 )
@@ -64,11 +65,22 @@ class ScannerViewModel @Inject constructor(
             try {
                 val result = productRepository.searchByBarcode(barcode)
                 result.fold(
-                    onSuccess = { p -> _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null) },
-                    onFailure = { e -> _uiState.value = _uiState.value.copy(isLoading = false, error = "Erro: ${e.message}", product = null) }
+                    onSuccess = { p ->
+                        val warning = if (p.isFromCache) "⚠️ Sem conexão — exibindo versão salva offline" else null
+                        _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null, warning = warning)
+                    },
+                    onFailure = { e ->
+                        val msg = when {
+                            e is java.net.UnknownHostException -> "Sem conexão com a internet"
+                            e is java.net.SocketTimeoutException -> "Servidor demorou para responder"
+                            e.message?.contains("fallback", ignoreCase = true) == true -> "Nenhum servidor disponível"
+                            else -> "Erro: ${e.message}"
+                        }
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = msg, product = null, warning = null)
+                    }
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = "Erro de conexão", product = null)
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "Erro de conexão: ${e.localizedMessage}", product = null, warning = null)
             }
         }
     }
@@ -81,11 +93,21 @@ class ScannerViewModel @Inject constructor(
             try {
                 val result = productRepository.searchByItemId(itemId)
                 result.fold(
-                    onSuccess = { p -> _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null) },
-                    onFailure = { e -> _uiState.value = _uiState.value.copy(isLoading = false, error = "Erro: ${e.message}", product = null) }
+                    onSuccess = { p ->
+                        val warning = if (p.isFromCache) "⚠️ Sem conexão — exibindo versão salva offline" else null
+                        _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null, warning = warning)
+                    },
+                    onFailure = { e ->
+                        val msg = when {
+                            e is java.net.UnknownHostException -> "Sem conexão com a internet"
+                            e is java.net.SocketTimeoutException -> "Servidor demorou para responder"
+                            else -> "Erro: ${e.message}"
+                        }
+                        _uiState.value = _uiState.value.copy(isLoading = false, error = msg, product = null, warning = null)
+                    }
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = "Erro de conexão", product = null)
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "Erro de conexão: ${e.localizedMessage}", product = null, warning = null)
             }
         }
     }
