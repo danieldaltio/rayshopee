@@ -16,20 +16,23 @@ data class ProductEntity(
     val itemId: String,
     val itemName: String,
     val barcode: String?,
-    val variations: List<ProductVariation>
+    val variations: List<ProductVariation>,
+    val lastSyncedAt: Long = 0L
 )
 
 fun ProductEntity.toDomain() = Product(
     itemId = itemId,
     itemName = itemName,
-    variations = variations
+    variations = variations,
+    lastSyncedAt = lastSyncedAt
 )
 
-fun Product.toEntity(barcode: String? = null) = ProductEntity(
+fun Product.toEntity(barcode: String? = null, lastSyncedAt: Long = System.currentTimeMillis()) = ProductEntity(
     itemId = itemId,
     itemName = itemName,
     barcode = barcode,
-    variations = variations
+    variations = variations,
+    lastSyncedAt = lastSyncedAt
 )
 
 class ProductConverters {

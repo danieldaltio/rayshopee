@@ -66,7 +66,10 @@ class ScannerViewModel @Inject constructor(
                 val result = productRepository.searchByBarcode(barcode)
                 result.fold(
                     onSuccess = { p ->
-                        val warning = if (p.isFromCache) "⚠️ Sem conexão — exibindo versão salva offline" else null
+                        val warning = if (p.isFromCache) {
+                            val timeAgo = formatTimeAgo(p.lastSyncedAt)
+                            "⚠️ Sem conexão — dados de $timeAgo"
+                        } else null
                         _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null, warning = warning)
                     },
                     onFailure = { e ->
@@ -94,7 +97,10 @@ class ScannerViewModel @Inject constructor(
                 val result = productRepository.searchByItemId(itemId)
                 result.fold(
                     onSuccess = { p ->
-                        val warning = if (p.isFromCache) "⚠️ Sem conexão — exibindo versão salva offline" else null
+                        val warning = if (p.isFromCache) {
+                            val timeAgo = formatTimeAgo(p.lastSyncedAt)
+                            "⚠️ Sem conexão — dados de $timeAgo"
+                        } else null
                         _uiState.value = _uiState.value.copy(isLoading = false, product = p, error = null, warning = warning)
                     },
                     onFailure = { e ->
@@ -187,5 +193,24 @@ class ScannerViewModel @Inject constructor(
 
     private fun clearProduct() {
         _uiState.value = ScannerUiState()
+    }
+
+    private fun formatTimeAgo(timestamp: Long): String {
+        if (timestamp <= 0L) return "tempo desconhecido"
+        val diffMs = System.currentTimeMillis() - timestamp
+        val diffSec = diffMs / 1000
+        val diffMin = diffSec / 60
+        val diffHour = diffMin / 60
+        val diffDay = diffHour / 24
+
+        return when {
+            diffMin < 1 -> "há menos de um minuto"
+            diffMin == 1L -> "há 1 minuto"
+            diffMin < 60 -> "há $diffMin minutos"
+            diffHour == 1L -> "há 1 hora"
+            diffHour < 24 -> "há $diffHour horas"
+            diffDay == 1L -> "há 1 dia"
+            else -> "há $diffDay dias"
+        }
     }
 }

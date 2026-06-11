@@ -8,7 +8,8 @@ data class Product(
     val itemId: String = "",
     val itemName: String = "",
     val variations: List<ProductVariation> = emptyList(),
-    @Transient val isFromCache: Boolean = false
+    @Transient val isFromCache: Boolean = false,
+    @Transient val lastSyncedAt: Long = 0L
 )
 
 @Serializable

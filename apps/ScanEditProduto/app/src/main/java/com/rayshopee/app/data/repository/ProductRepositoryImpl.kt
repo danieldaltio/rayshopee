@@ -195,7 +195,8 @@ class ProductRepositoryImpl @Inject constructor(
                 itemId = product.itemId,
                 itemName = product.itemName,
                 barcode = barcode,
-                variations = product.variations
+                variations = product.variations,
+                lastSyncedAt = System.currentTimeMillis()
             ))
             Result.success(product)
         } catch (e: Exception) {
@@ -206,7 +207,8 @@ class ProductRepositoryImpl @Inject constructor(
                     itemId = cached.itemId,
                     itemName = cached.itemName,
                     variations = cached.variations,
-                    isFromCache = true
+                    isFromCache = true,
+                    lastSyncedAt = cached.lastSyncedAt
                 ))
             } else {
                 Result.failure(e)
@@ -237,7 +239,8 @@ class ProductRepositoryImpl @Inject constructor(
                 itemId = product.itemId,
                 itemName = product.itemName,
                 barcode = null, // Não temos certeza do barcode principal aqui
-                variations = product.variations
+                variations = product.variations,
+                lastSyncedAt = System.currentTimeMillis()
             ))
             Result.success(product)
         } catch (e: Exception) {
@@ -247,7 +250,8 @@ class ProductRepositoryImpl @Inject constructor(
                     itemId = cached.itemId,
                     itemName = cached.itemName,
                     variations = cached.variations,
-                    isFromCache = true
+                    isFromCache = true,
+                    lastSyncedAt = cached.lastSyncedAt
                 ))
             } else {
                 Result.failure(e)
