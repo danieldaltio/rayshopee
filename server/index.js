@@ -1221,6 +1221,7 @@ app.get('/api/products/barcode', async (req, res) => {
         const product = dbProducts[0];
         
         // Get ALL variations from Shopee API
+        await ensureValidToken();
         const modelRes = await shopeeGet('/api/v2/product/get_model_list', {
           item_id: parseInt(product.item_id),
         });
@@ -1293,6 +1294,7 @@ app.get('/api/products/barcode', async (req, res) => {
     if (/^\d+$/.test(barcode) && barcode.length >= 8 && barcode.length <= 11) {
       try {
         // Try get_item_detail which has more info including attributes
+        await ensureValidToken();
         const detailRes = await shopeeGet('/api/v2/product/get_item_detail', {
           item_id: parseInt(barcode),
         });
@@ -2759,38 +2761,39 @@ app.post('/api/products/sync-ean', async (req, res) => {
 // ============================================================
 //  GENERATE SELF-SIGNED CERTIFICATE
 // ============================================================
-const CERTS_DIR = path.join(__dirname, 'certs');
-if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
-
-const keyPath = path.join(CERTS_DIR, 'server.key');
-const certPath = path.join(CERTS_DIR, 'server.cert');
-
 let sslKey, sslCert;
+if (!process.env.VERCEL) {
+  const CERTS_DIR = path.join(__dirname, 'certs');
+  if (!fs.existsSync(CERTS_DIR)) fs.mkdirSync(CERTS_DIR, { recursive: true });
 
-if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
-  sslKey = fs.readFileSync(keyPath);
-  sslCert = fs.readFileSync(certPath);
-  console.log('  🔐 SSL: Usando certificados existentes');
-} else {
-  console.log('  🔐 SSL: Gerando certificado auto-assinado...');
-  const attrs = [{ name: 'commonName', value: AUTH_DOMAIN }];
-  const pems = await selfsigned.generate(attrs, {
-    algorithm: 'sha256',
-    days: 365,
-    keySize: 2048,
-    extensions: [
-      { name: 'subjectAltName', altNames: [
-        { type: 2, value: AUTH_DOMAIN },
-        { type: 2, value: 'localhost' },
-        { type: 7, ip: '127.0.0.1' },
-      ]},
-    ],
-  });
-  sslKey = pems.private;
-  sslCert = pems.cert;
-  fs.writeFileSync(keyPath, sslKey);
-  fs.writeFileSync(certPath, sslCert);
-  console.log('  ✅ Certificado gerado e salvo em server/certs/');
+  const keyPath = path.join(CERTS_DIR, 'server.key');
+  const certPath = path.join(CERTS_DIR, 'server.cert');
+
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    sslKey = fs.readFileSync(keyPath);
+    sslCert = fs.readFileSync(certPath);
+    console.log('  🔐 SSL: Usando certificados existentes');
+  } else {
+    console.log('  🔐 SSL: Gerando certificado auto-assinado...');
+    const attrs = [{ name: 'commonName', value: AUTH_DOMAIN }];
+    const pems = await selfsigned.generate(attrs, {
+      algorithm: 'sha256',
+      days: 365,
+      keySize: 2048,
+      extensions: [
+        { name: 'subjectAltName', altNames: [
+          { type: 2, value: AUTH_DOMAIN },
+          { type: 2, value: 'localhost' },
+          { type: 7, ip: '127.0.0.1' },
+        ]},
+      ],
+    });
+    sslKey = pems.private;
+    sslCert = pems.cert;
+    fs.writeFileSync(keyPath, sslKey);
+    fs.writeFileSync(certPath, sslCert);
+    console.log('  ✅ Certificado gerado e salvo em server/certs/');
+  }
 }
 
 // ============================================================
