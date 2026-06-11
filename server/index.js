@@ -8,7 +8,14 @@ import { fileURLToPath } from 'url';
 import selfsigned from 'selfsigned';
 import { createClient } from '@supabase/supabase-js';
 import archiver from 'archiver';
-import { tryDownloadInvoice, getXmlsFromSefazByPeriod, initSefazService } from './sefaz-service.js';
+
+let sefazModule = null;
+import('./sefaz-service.js').then(module => {
+  sefazModule = module;
+  module.initSefazService().catch(err => console.error('[SEFAZ] Init errored:', err));
+}).catch(err => {
+  console.log('[SEFAZ] Module not available (e.g. on Vercel environment):', err.message);
+});
 
 import dotenv from 'dotenv';
 import * as Sentry from '@sentry/node';
@@ -25,8 +32,7 @@ Sentry.init({
 
 const app = express();
 
-// Initialize SEFAZ service
-await initSefazService();
+// SEFAZ service is initialized asynchronously at the top of the file
 
 console.log('Express version:', express.version);
 app.use(cors());
@@ -676,7 +682,10 @@ app.get('/api/xml-downloader/orders/:orderSn/xml', async (req, res) => {
 
     // 2. Download from SEFAZ
     console.log(`[xml-downloader] Baixando XML da SEFAZ para pedido: ${orderSn} (Chave: ${accessKey})`);
-    const result = await tryDownloadInvoice(orderSn, accessKey);
+    let result = { success: false, code: 'NOT_AVAILABLE' };
+    if (sefazModule) {
+      result = await sefazModule.tryDownloadInvoice(orderSn, accessKey);
+    }
     
     if (result.success && result.content) {
       xmlCache.set(accessKey, result.content);
@@ -751,7 +760,11 @@ app.get('/api/xml-downloader/access-key/:accessKey', async (req, res) => {
 
     // 2. Download from SEFAZ
     console.log(`[xml-downloader] Baixando XML da SEFAZ por chave direta: ${accessKey}`);
-    const result = await tryDownloadInvoice(null, accessKey);
+    const sefazModule = await import('./sefaz-service.js');
+    let result = { success: false, code: 'NOT_AVAILABLE' };
+    if (sefazModule) {
+      result = await sefazModule.tryDownloadInvoice('N/A', accessKey);
+    }
     
     if (result.success && result.content) {
       xmlCache.set(accessKey, result.content);
@@ -777,7 +790,10 @@ app.get('/api/xml-downloader/sync-sefaz', async (req, res) => {
     if (!time_from || !time_to) return res.status(400).json({ error: 'missing_period' });
 
     console.log(`[xml-downloader] Sincronizando SEFAZ de ${time_from} até ${time_to}`);
-    const xmls = await getXmlsFromSefazByPeriod(parseInt(time_from), parseInt(time_to));
+    let xmls = [];
+    if (sefazModule) {
+      xmls = await sefazModule.getXmlsFromSefazByPeriod(parseInt(time_from), parseInt(time_to));
+    }
     
     let count = 0;
     for (const item of xmls) {
@@ -836,7 +852,10 @@ app.post('/api/xml-downloader/zip', async (req, res) => {
           // Throttling: Pequena pausa para evitar 656
           await sleep(1000); 
 
-          const result = await tryDownloadInvoice(orderSn, accessKey);
+          let result = { success: false, code: 'NOT_AVAILABLE' };
+          if (sefazModule) {
+            result = await sefazModule.tryDownloadInvoice(orderSn, accessKey);
+          }
           if (result.success && result.content) {
             content = result.content;
             xmlCache.set(accessKey, content);
