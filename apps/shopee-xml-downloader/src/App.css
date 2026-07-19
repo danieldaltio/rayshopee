@@ -144,6 +144,11 @@ body {
   border-color: var(--accent);
 }
 
+.search-field select option {
+  background: var(--bg);
+  color: var(--text);
+}
+
 .search-field input[type="date"] {
   width: 160px;
 }

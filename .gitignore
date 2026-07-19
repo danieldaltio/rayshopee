@@ -1,6 +1,10 @@
 # Environment
 .env
 .env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
 
 # Dependencies
 node_modules/
@@ -22,15 +26,20 @@ compiled_raycast_rust
 
 # Logs
 *.log
+logs/
 
 # Misc
 .DS_Store
 nul
 *.apk
+*.keystore
+**/keystore.properties
+**/keystore.properties.local
 
 # AI / Agent specific files
 .planning/
 .opencode/
+.cursor/
 
 # Python bytecode
 __pycache__/
@@ -39,3 +48,20 @@ __pycache__/
 # SQLite temporary files
 *.sqlite-shm
 *.sqlite-wal
+*.db
+
+# Workspace organization (new structure)
+.memory/
+debug/
+archive/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Sensitive config
+**/gradle.properties
+!**/gradle.properties.example
+
+# OS
+Thumbs.db

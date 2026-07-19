@@ -1,0 +1,19 @@
+# ScanAddProdutos - Example gradle.properties
+# Copy to gradle.properties and fill in real values
+
+SHOPEE_PARTNER_ID=your_partner_id
+SHOPEE_PARTNER_KEY=your_partner_key
+SHOPEE_ACCESS_TOKEN=your_access_token
+SHOPEE_REFRESH_TOKEN=your_refresh_token
+SHOPEE_SHOP_ID=your_shop_id
+GEMINI_API_KEY=your_gemini_key
+GROQ_API_KEY=your_groq_key
+REMOVEBG_API_KEY=your_removebg_key
+SERVER_BASE_URL=https://your-server-url.com
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_cloudinary_key
+CLOUDINARY_API_SECRET=your_cloudinary_secret
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+android.disallowKotlinSourceSets=false
+org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g

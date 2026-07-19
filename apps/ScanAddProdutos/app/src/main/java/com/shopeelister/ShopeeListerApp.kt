@@ -2,6 +2,7 @@ package com.shopeelister
 
 import android.app.Application
 import com.shopeelister.data.local.ConfigStore
+import com.shopeelister.data.remote.gemini.GeminiService
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,6 +15,7 @@ import javax.inject.Inject
 class ShopeeListerApp : Application() {
 
     @Inject lateinit var configStore: ConfigStore
+    @Inject lateinit var geminiService: GeminiService
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -32,6 +34,21 @@ class ShopeeListerApp : Application() {
                     BuildConfig.CLOUDINARY_API_KEY,
                     BuildConfig.CLOUDINARY_API_SECRET
                 )
+            }
+        }
+
+        // Initialize GeminiService (gemini-2.5-flash) — DataStore key has priority
+        // over BuildConfig. Without this init, every AI button silently fails
+        // because `model` stays null.
+        appScope.launch {
+            val savedKey = configStore.geminiKey.first()
+            val buildKey = BuildConfig.GEMINI_API_KEY
+            val finalKey = savedKey.ifBlank { buildKey }
+            if (finalKey.isNotBlank()) {
+                android.util.Log.d("ShopeeListerApp", "Initializing Gemini (saved=${savedKey.isNotBlank()}, buildConfig=${buildKey.isNotBlank()})")
+                geminiService.init(finalKey)
+            } else {
+                android.util.Log.w("ShopeeListerApp", "Gemini key empty in both DataStore and BuildConfig — AI buttons will fail until you set it in Settings or local.properties")
             }
         }
     }

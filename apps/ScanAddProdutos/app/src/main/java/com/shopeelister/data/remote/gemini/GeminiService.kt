@@ -2,28 +2,50 @@ package com.shopeelister.data.remote.gemini
 
 import android.graphics.Bitmap
 import com.google.ai.client.generativeai.GenerativeModel
-import com.google.ai.client.generativeai.type.RequestOptions
 import com.google.ai.client.generativeai.type.content
 import com.shopeelister.domain.model.SearchResult
-import com.squareup.moshi.Moshi
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class GeminiService @Inject constructor(
-    private val moshi: Moshi
+    private val json: Json
 ) {
     private val initJob = kotlinx.coroutines.CompletableDeferred<Unit>()
     private var model: GenerativeModel? = null
 
+    /**
+     * Inicializa o GeminiService com a chave fornecida.
+     *
+     * **Modelo:** `gemini-2.5-flash` (Google AI Studio).
+     * - Free tier: 1500 req/dia, 1M context, multimodal, sem cartão.
+     * - Substitui o legado `gemini-pro` (descontinuado em abril/2025).
+     * - Substitui o Groq `llama-3.3-70b-versatile` (descontinuado em 2026-08-16,
+     *   free e developer-tier).
+     *
+     * **Por que esse e não `gemini-2.5-pro`?** Pro requer cartão até para free tier
+     * em alguns planos; Flash é o top da categoria sem cartão e aguenta 1500/dia
+     * com 1M de contexto. Custo zero absoluto.
+     *
+     * Gera key em: https://aistudio.google.com/apikey
+     */
     fun init(apiKey: String) {
         if (apiKey.isBlank()) {
             android.util.Log.e("GeminiService", "API Key is empty!")
             return
         }
-        android.util.Log.d("GeminiService", "Initializing with key: ${apiKey.take(5)}...")
+        android.util.Log.d("GeminiService", "Initializing gemini-2.5-flash with key: ${apiKey.take(5)}...")
+        // Defaults do SDK (temperature=1, topP=0.95, topK não exposto) já são
+        // razoáveis p/ prompts descritivos. Se quiser tunar, é só passar
+        // GenerationConfig(...) construído via construtor de data class.
         model = GenerativeModel(
-            modelName = "gemini-pro",
+            modelName = "gemini-2.5-flash",
             apiKey = apiKey
         )
         initJob.complete(Unit)
@@ -161,40 +183,45 @@ class GeminiService @Inject constructor(
         }
     }
 
-    private fun parseSearchResult(json: String): SearchResult {
+    private fun parseSearchResult(rawJson: String): SearchResult {
         return try {
-            android.util.Log.d("GeminiService", "Raw Response: $json")
-            
-            // Defensiva: extrair conteúdo entre { }
-            val startIndex = json.indexOf('{')
-            val endIndex = json.lastIndexOf('}')
-            if (startIndex == -1 || endIndex == -1) return SearchResult()
-            
-            val cleanJson = json.substring(startIndex, endIndex + 1)
-            
-            // Usar Map para flexibilidade (Moshi pode falhar com tipos se usarmos classe direta e a IA retornar string em vez de int)
-            val type = com.squareup.moshi.Types.newParameterizedType(Map::class.java, String::class.java, Any::class.java)
-            val adapter = moshi.adapter<Map<String, Any>>(type)
-            val map = adapter.fromJson(cleanJson) ?: return SearchResult()
+            android.util.Log.d("GeminiService", "Raw Response: $rawJson")
 
-            val variations = (map["variations"] as? List<*>)?.mapNotNull { item ->
-                (item as? Map<*, *>)?.let { v ->
-                    com.shopeelister.domain.model.Variation(
-                        name = v["name"]?.toString() ?: "Padrão",
-                        priceCents = v["priceCents"]?.toString()?.filter { it.isDigit() }?.toLongOrNull() ?: 0L,
-                        stock = v["stock"]?.toString()?.filter { it.isDigit() }?.toIntOrNull() ?: 1
-                    )
-                }
-            } ?: emptyList()
+            // Defensiva: extrair conteúdo entre { }
+            val startIndex = rawJson.indexOf('{')
+            val endIndex = rawJson.lastIndexOf('}')
+            if (startIndex == -1 || endIndex == -1) return SearchResult()
+
+            val cleanJson = rawJson.substring(startIndex, endIndex + 1)
+
+            // Usar JsonElement pra flexibilidade (a IA pode retornar string em vez de int).
+            val element: JsonElement = json.parseToJsonElement(cleanJson)
+            val map = element as? JsonObject ?: return SearchResult()
+
+            val variations: List<com.shopeelister.domain.model.Variation> =
+                (map["variations"] as? JsonArray)
+                    ?.mapNotNull { item ->
+                        val v = item as? JsonObject ?: return@mapNotNull null
+                        com.shopeelister.domain.model.Variation(
+                            name = v["name"]?.jsonPrimitive?.contentOrNull ?: "Padrão",
+                            priceCents = v["priceCents"]?.jsonPrimitive?.contentOrNull
+                                ?.filter { it.isDigit() }?.toLongOrNull() ?: 0L,
+                            stock = v["stock"]?.jsonPrimitive?.contentOrNull
+                                ?.filter { it.isDigit() }?.toIntOrNull() ?: 1
+                        )
+                    }
+                    ?: emptyList()
 
             SearchResult(
-                title = map["title"]?.toString(),
-                brand = map["brand"]?.toString(),
-                weightGrams = map["weightGrams"]?.toString()?.filter { it.isDigit() }?.toIntOrNull(),
-                dimensions = map["dimensions"]?.toString(),
-                priceCents = map["priceCents"]?.toString()?.filter { it.isDigit() }?.toLongOrNull(),
-                description = map["description"]?.toString(),
-                category = map["category"]?.toString(),
+                title = (map["title"] as? JsonElement)?.jsonPrimitive?.contentOrNull,
+                brand = (map["brand"] as? JsonElement)?.jsonPrimitive?.contentOrNull,
+                weightGrams = (map["weightGrams"] as? JsonElement)?.jsonPrimitive?.contentOrNull
+                    ?.filter { it.isDigit() }?.toIntOrNull(),
+                dimensions = (map["dimensions"] as? JsonElement)?.jsonPrimitive?.contentOrNull,
+                priceCents = (map["priceCents"] as? JsonElement)?.jsonPrimitive?.contentOrNull
+                    ?.filter { it.isDigit() }?.toLongOrNull(),
+                description = (map["description"] as? JsonElement)?.jsonPrimitive?.contentOrNull,
+                category = (map["category"] as? JsonElement)?.jsonPrimitive?.contentOrNull,
                 variations = variations
             )
         } catch (e: Exception) {
@@ -204,7 +231,7 @@ class GeminiService @Inject constructor(
     }
 }
 
-@com.squareup.moshi.JsonClass(generateAdapter = true)
+@kotlinx.serialization.Serializable
 data class SearchResultJson(
     val title: String? = null,
     val brand: String? = null,

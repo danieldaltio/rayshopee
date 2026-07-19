@@ -1,6 +1,5 @@
-export async function fetchCancelledReturnedOrders(timeFrom, timeTo, status = 'ALL') {
+export async function fetchOrders(timeFrom, timeTo) {
   const params = new URLSearchParams({ time_from: timeFrom, time_to: timeTo });
-  if (status !== 'ALL') params.set('status', status);
   const res = await fetch(`/api/xml-downloader/orders?${params}`);
   if (!res.ok) {
     const err = await res.json();

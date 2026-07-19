@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ScanEditProduto</string>
+
+    <!-- Mensagens de erro user-facing (mapeadas a partir de ScannerErrorKind) -->
+    <string name="error_not_found">Produto não encontrado na base. Verifique se o código de barras foi lido corretamente.</string>
+    <string name="error_no_connection">Sem conexão com a internet.</string>
+    <string name="error_timeout">O servidor demorou para responder. Tente novamente.</string>
+    <string name="error_server">Servidor temporariamente indisponível. Tente em alguns instantes.</string>
+    <string name="error_unknown">Algo deu errado. Tente novamente.</string>
+    <string name="error_update_failed">Não foi possível salvar a alteração. Verifique a conexão e tente de novo.</string>
 </resources>

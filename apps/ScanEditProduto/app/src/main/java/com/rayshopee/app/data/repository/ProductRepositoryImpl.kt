@@ -1,6 +1,7 @@
 package com.rayshopee.app.data.repository
 
 import com.rayshopee.app.data.model.Product
+import com.rayshopee.app.data.model.ProductSearchResult
 import com.rayshopee.app.data.model.ProductVariation
 import com.rayshopee.app.data.model.UpdateCostRequest
 import kotlinx.coroutines.flow.Flow
@@ -26,14 +27,19 @@ import androidx.work.WorkManager
 import com.rayshopee.app.data.local.AppDatabase
 import com.rayshopee.app.data.local.PendingActionEntity
 import com.rayshopee.app.data.local.ProductEntity
+import com.rayshopee.core.network.FallbackUrlInterceptor
+import com.rayshopee.core.network.NetworkConfig
+import com.rayshopee.core.network.NetworkDiscovery
 import com.rayshopee.app.data.worker.SyncWorker
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
-// Backup URLs para fallback
-private val FALLBACK_URLS = listOf(
-    "https://rayshopee.vercel.app",
-    "https://rayshopee.loca.lt"
-)
+// Lista de URLs candidatas agora vem do NetworkConfig (rayshopee-core).
+// Ela é dinâmica: [userUrl (opcional), lanUrl (auto), cloudflareUrl (fallback final)].
+// O NetworkConfig já faz o scan de LAN em background e prepende.
 
 interface ShopeeApi {
     @GET("/api/wakeup")
@@ -44,6 +50,13 @@ interface ShopeeApi {
     
     @GET("/api/products/item/{itemId}")
     suspend fun searchByItemId(@retrofit2.http.Path("itemId") itemId: String): ProductResponse
+    
+    /**
+     * Busca ampla por nome/SKU/EAN. Retorna lista de até 100 produtos
+     * (backend usa ILIKE no Supabase, com fallback pra API da Shopee).
+     */
+    @GET("/api/products/search")
+    suspend fun searchByName(@Query("q") query: String): ProductSearchListResponse
     
     @POST("/api/products/update-price")
     suspend fun updatePrice(@retrofit2.http.Body request: UpdatePriceRequest): UpdateResponse
@@ -60,6 +73,29 @@ data class ProductResponse(
     val itemId: String = "",
     val itemName: String = "",
     val variations: List<VariationResponse> = emptyList()
+)
+
+/**
+ * Response de /api/products/search?q=...
+ *
+ * Backend retorna { products: [{ item_id, model_id, name, variation, sku, image, price, stock, cost }, ...] }.
+ */
+@Serializable
+data class ProductSearchListResponse(
+    val products: List<ProductSearchItemResponse> = emptyList()
+)
+
+@Serializable
+data class ProductSearchItemResponse(
+    val item_id: String = "",
+    val model_id: Long = 0,
+    val name: String = "",
+    val variation: String = "",
+    val sku: String = "",
+    val image: String = "",
+    val price: Double = 0.0,
+    val stock: Int = 0,
+    val cost: Double = 0.0
 )
 
 @Serializable
@@ -92,93 +128,52 @@ data class UpdateStockRequest(
 @Singleton
 class ProductRepositoryImpl @Inject constructor(
     private val db: AppDatabase,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val networkConfig: NetworkConfig,
+    private val fallbackInterceptorFactory: FallbackUrlInterceptor.Factory
 ) : ProductRepository {
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        // NetworkConfig já faz o scan de LAN em background no próprio init.
+        // Só precisamos garantir que ele esteja ativo.
+        scope.launch {
+            networkConfig.refreshLan()
+        }
+    }
 
     suspend fun syncPendingActions(): Boolean {
         // Feature disabled temporarily
         return true
     }
-    
+
     companion object {
-        // Vercel deployment URL
-        private const val BASE_URL = "https://rayshopee.vercel.app"
+        // URL base usada pelo Retrofit. O `baseUrl` é só um placeholder —
+        // o FallbackUrlInterceptor reescreve pra cada candidato na hora da request.
+        // Mantemos o Cloudflare aqui porque o Retrofit exige um URL bem-formado
+        // (com scheme + host), e isso garante que mesmo se o Interceptor falhar,
+        // o cliente saiba pra onde apontar.
+        private const val BASE_URL = NetworkConfig.DEFAULT_CLOUDFLARE_URL
     }
     
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
     }
-    
+
     private val bypassHeaders = Interceptor { chain ->
-        val request = chain.request().newBuilder()
-            .header("Bypass-Tunnel-Reminder", "true")
-            .header("ngrok-skip-browser-warning", "69420")
-            .build()
-        chain.proceed(request)
+        // LAN local — sem headers de bypass de túnel
+        chain.proceed(chain.request())
     }
-    
-    private val fallbackInterceptor = Interceptor { chain ->
-        val request = chain.request()
-        var lastResponse: okhttp3.Response? = null
-        var lastException: Exception? = null
 
-        for (url in FALLBACK_URLS) {
-            val targetHost = url.replace("https://", "").replace("http://", "")
-            var attempts = 0
-            val maxAttempts = 3
-            var delayMs = 1000L
-
-            while (attempts < maxAttempts) {
-                attempts++
-                try {
-                    val newUrl = request.url.newBuilder()
-                        .scheme("https")
-                        .host(targetHost)
-                        .build()
-                    
-                    val newRequest = request.newBuilder().url(newUrl).build()
-                    
-                    lastResponse?.close()
-                    lastResponse = chain.proceed(newRequest)
-                    
-                    if (lastResponse.isSuccessful) {
-                        return@Interceptor lastResponse
-                    }
-                    
-                    // Se o erro for do servidor (502, 503, 504), vale a pena tentar novamente
-                    val code = lastResponse.code
-                    if (code != 502 && code != 503 && code != 504) {
-                        break
-                    }
-                } catch (e: java.io.IOException) {
-                    lastException = e
-                    // Se for UnknownHostException (sem internet / sem DNS), não adianta tentar novamente esta URL
-                    if (e is java.net.UnknownHostException) {
-                        break
-                    }
-                } catch (e: Exception) {
-                    lastException = e
-                    break
-                }
-
-                if (attempts < maxAttempts) {
-                    try {
-                        Thread.sleep(delayMs)
-                    } catch (_: InterruptedException) {}
-                    delayMs *= 2
-                }
-            }
-        }
-        
-        return@Interceptor lastResponse ?: throw lastException ?: java.net.UnknownHostException("All fallback URLs failed")
-    }
-    
     private fun createClient(): OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(45, TimeUnit.SECONDS) // Increased for Render cold start
         .readTimeout(45, TimeUnit.SECONDS)
         .addInterceptor(bypassHeaders)
-        .addInterceptor(fallbackInterceptor)
+        // Fallback vem do rayshopee-core: usa a lista de candidatos do NetworkConfig,
+        // que muda dinamicamente conforme LAN é descoberta ou user URL é alterada.
+        .addInterceptor(fallbackInterceptorFactory.create())
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         })
@@ -193,97 +188,117 @@ class ProductRepositoryImpl @Inject constructor(
         .create(ShopeeApi::class.java)
     
     private var api: ShopeeApi = createApi(BASE_URL)
-    
-    private suspend fun warmUp() {
-        try {
-            api.wakeUp()
-        } catch (_: Exception) {}
-    }
-    
-    override suspend fun searchByBarcode(barcode: String): Result<Product> {
-        return try {
-            warmUp()
-            val response = api.searchByBarcode(barcode)
-            val product = Product(
-                itemId = response.itemId,
-                itemName = response.itemName,
-                variations = response.variations.map { v ->
-                    ProductVariation(
-                        variationId = v.variationId,
-                        name = v.name,
-                        price = v.price,
-                        stock = v.stock,
-                        cost = v.cost,
-                        barcode = v.barcode
-                    )
-                }
-            )
-            // Cache localmente
-            db.productDao().insertProduct(ProductEntity(
-                itemId = product.itemId,
-                itemName = product.itemName,
-                barcode = barcode,
-                variations = product.variations,
-                lastSyncedAt = System.currentTimeMillis()
-            ))
-            Result.success(product)
-        } catch (e: Exception) {
-            // Tenta pegar do cache
-            val cached = db.productDao().getProductByBarcode(barcode)
-            if (cached != null) {
-                Result.success(Product(
-                    itemId = cached.itemId,
-                    itemName = cached.itemName,
-                    variations = cached.variations,
-                    isFromCache = true,
-                    lastSyncedAt = cached.lastSyncedAt
-                ))
-            } else {
-                Result.failure(e)
+
+    /**
+     * Converte ProductResponse → Product e salva no cache local.
+     */
+    private suspend fun mapAndCache(response: ProductResponse, barcode: String? = null): Product {
+        val product = Product(
+            itemId = response.itemId,
+            itemName = response.itemName,
+            variations = response.variations.map { v ->
+                ProductVariation(
+                    variationId = v.variationId,
+                    name = v.name,
+                    price = v.price,
+                    stock = v.stock,
+                    cost = v.cost,
+                    barcode = v.barcode
+                )
             }
+        )
+        val cacheBarcode = barcode ?: product.variations.firstOrNull()?.barcode
+        db.productDao().insertProduct(ProductEntity(
+            itemId = product.itemId,
+            itemName = product.itemName,
+            barcode = cacheBarcode,
+            variations = product.variations,
+            lastSyncedAt = System.currentTimeMillis()
+        ))
+        return product
+    }
+
+    override suspend fun searchByBarcode(barcode: String): Result<Product> {
+        // Cache-first: retorna do cache local se existir (instantâneo, funciona offline)
+        val cached = db.productDao().getProductByBarcode(barcode)
+        if (cached != null) {
+            return Result.success(Product(
+                itemId = cached.itemId,
+                itemName = cached.itemName,
+                variations = cached.variations,
+                isFromCache = true,
+                lastSyncedAt = cached.lastSyncedAt
+            ))
+        }
+        // Sem cache → vai direto pra rede
+        return try {
+            val response = api.searchByBarcode(barcode)
+            Result.success(mapAndCache(response, barcode))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Busca direto na rede (ignora cache). Usado pelo ViewModel pra
+     * background refresh: mostra cache imediato, depois atualiza a UI com dados frescos.
+     */
+    override suspend fun fetchFreshByBarcode(barcode: String): Result<Product> {
+        return try {
+            val response = api.searchByBarcode(barcode)
+            Result.success(mapAndCache(response, barcode))
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
     override suspend fun searchByItemId(itemId: String): Result<Product> {
-        return try {
-            warmUp()
-            val response = api.searchByItemId(itemId)
-            val product = Product(
-                itemId = response.itemId,
-                itemName = response.itemName,
-                variations = response.variations.map { v ->
-                    ProductVariation(
-                        variationId = v.variationId,
-                        name = v.name,
-                        price = v.price,
-                        stock = v.stock,
-                        cost = v.cost,
-                        barcode = v.barcode
-                    )
-                }
-            )
-            // Cache localmente
-            db.productDao().insertProduct(ProductEntity(
-                itemId = product.itemId,
-                itemName = product.itemName,
-                barcode = null, // Não temos certeza do barcode principal aqui
-                variations = product.variations,
-                lastSyncedAt = System.currentTimeMillis()
+        val cached = db.productDao().getProductByItemId(itemId)
+        if (cached != null) {
+            return Result.success(Product(
+                itemId = cached.itemId,
+                itemName = cached.itemName,
+                variations = cached.variations,
+                isFromCache = true,
+                lastSyncedAt = cached.lastSyncedAt
             ))
-            Result.success(product)
+        }
+        return try {
+            val response = api.searchByItemId(itemId)
+            Result.success(mapAndCache(response))
         } catch (e: Exception) {
-            val cached = db.productDao().getProductByItemId(itemId)
-            if (cached != null) {
-                Result.success(Product(
-                    itemId = cached.itemId,
-                    itemName = cached.itemName,
-                    variations = cached.variations,
-                    isFromCache = true,
-                    lastSyncedAt = cached.lastSyncedAt
-                ))
-            } else {
-                Result.failure(e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun fetchFreshByItemId(itemId: String): Result<Product> {
+        return try {
+            val response = api.searchByItemId(itemId)
+            Result.success(mapAndCache(response))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun searchByName(query: String): Result<List<ProductSearchResult>> {
+        return try {
+            val response = api.searchByName(query)
+            val results = response.products.map { r ->
+                ProductSearchResult(
+                    itemId = r.item_id,
+                    modelId = r.model_id,
+                    name = r.name,
+                    variation = r.variation,
+                    sku = r.sku,
+                    price = r.price,
+                    stock = r.stock,
+                    cost = r.cost,
+                    image = r.image
+                )
             }
+            Result.success(results)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -292,68 +307,109 @@ class ProductRepositoryImpl @Inject constructor(
         WorkManager.getInstance(context).enqueue(workRequest)
     }
 
-    override suspend fun updatePrice(itemId: String, variationId: String, price: Double): Result<Unit> {
+    override suspend fun updatePrice(
+        itemId: String,
+        variationId: String,
+        price: Double,
+        fromQueue: Boolean
+    ): Result<Unit> {
         return try {
             val response = api.updatePrice(UpdatePriceRequest(itemId, variationId, price))
             if (response.success) Result.success(Unit)
             else Result.failure(Exception(response.message))
         } catch (e: Exception) {
-            // Salva pendência
-            db.productDao().insertPendingAction(
-                PendingActionEntity(
-                    itemId = itemId,
-                    variationId = variationId,
-                    actionType = "UPDATE_PRICE",
-                    value = price
+            if (fromQueue) {
+                // SyncWorker re-tentando — não duplica a pendência
+                return Result.failure(e)
+            }
+            // Chamada do UI — enfileira localmente e sinaliza "salvo offline"
+            try {
+                db.productDao().insertPendingAction(
+                    PendingActionEntity(
+                        itemId = itemId,
+                        variationId = variationId,
+                        actionType = "UPDATE_PRICE",
+                        value = price
+                    )
                 )
-            )
-            enqueueSync()
-            Result.success(Unit) // Retorna sucesso falso pro app continuar offline
+                enqueueSync()
+                Result.failure(OfflineQueuedException(e))
+            } catch (dbError: Exception) {
+                // Não conseguiu nem enfileirar — falha real
+                Result.failure(dbError)
+            }
         }
     }
 
-    override suspend fun updateStock(itemId: String, variationId: String, stock: Int): Result<Unit> {
+    override suspend fun updateStock(
+        itemId: String,
+        variationId: String,
+        stock: Int,
+        fromQueue: Boolean
+    ): Result<Unit> {
         return try {
             val response = api.updateStock(UpdateStockRequest(itemId, variationId, stock))
             if (response.success) Result.success(Unit)
             else Result.failure(Exception(response.message))
         } catch (e: Exception) {
-            db.productDao().insertPendingAction(
-                PendingActionEntity(
-                    itemId = itemId,
-                    variationId = variationId,
-                    actionType = "UPDATE_STOCK",
-                    value = stock.toDouble()
+            if (fromQueue) {
+                return Result.failure(e)
+            }
+            try {
+                db.productDao().insertPendingAction(
+                    PendingActionEntity(
+                        itemId = itemId,
+                        variationId = variationId,
+                        actionType = "UPDATE_STOCK",
+                        value = stock.toDouble()
+                    )
                 )
-            )
-            enqueueSync()
-            Result.success(Unit)
+                enqueueSync()
+                Result.failure(OfflineQueuedException(e))
+            } catch (dbError: Exception) {
+                Result.failure(dbError)
+            }
         }
     }
 
-    override suspend fun updateCost(itemId: String, variationId: String, cost: Double): Result<Unit> {
+    override suspend fun updateCost(
+        itemId: String,
+        variationId: String,
+        cost: Double,
+        fromQueue: Boolean
+    ): Result<Unit> {
         return try {
             val response = api.updateCost(UpdateCostRequest(itemId, variationId, cost))
             if (response.success) Result.success(Unit)
             else Result.failure(Exception(response.message))
         } catch (e: Exception) {
-            db.productDao().insertPendingAction(
-                PendingActionEntity(
-                    itemId = itemId,
-                    variationId = variationId,
-                    actionType = "UPDATE_COST",
-                    value = cost
+            if (fromQueue) {
+                return Result.failure(e)
+            }
+            try {
+                db.productDao().insertPendingAction(
+                    PendingActionEntity(
+                        itemId = itemId,
+                        variationId = variationId,
+                        actionType = "UPDATE_COST",
+                        value = cost
+                    )
                 )
-            )
-            enqueueSync()
-            Result.success(Unit)
+                enqueueSync()
+                Result.failure(OfflineQueuedException(e))
+            } catch (dbError: Exception) {
+                Result.failure(dbError)
+            }
         }
     }
 
     override suspend fun checkHealth(): Boolean {
+        // Usa NetworkConfig.checkHealth — ele tenta cada candidato em paralelo
+        // e retorna true se QUALQUER um responder 200 em /api/wakeup.
+        // Isso é mais robusto que `api.wakeUp()` (que só testa o baseUrl do Retrofit,
+        // não os fallbacks).
         return try {
-            api.wakeUp()
-            true
+            networkConfig.checkHealth()
         } catch (e: Exception) {
             false
         }

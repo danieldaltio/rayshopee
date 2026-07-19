@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Header from './components/Header.jsx';
 import OrderList from './components/OrderList.jsx';
 import LoadingSpinner from './components/LoadingSpinner.jsx';
-import { fetchCancelledReturnedOrders, downloadXml, downloadZip, checkHealth, downloadXmlByAccessKey, syncSefaz } from './api.js';
+import { fetchOrders, downloadXml, downloadZip, checkHealth, downloadXmlByAccessKey, syncSefaz } from './api.js';
 
 // Remove MAX_DAYS constant since we don't use chunks anymore
 const DEFAULT_DAYS = 30;
@@ -34,6 +34,8 @@ export default function App() {
   const [dateFrom, setDateFrom] = useState(getDefaultDates().from);
   const [dateTo, setDateTo] = useState(getDefaultDates().to);
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [returnStatusFilter, setReturnStatusFilter] = useState('ALL');
+  const [returnReasonFilter, setReturnReasonFilter] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [totalStats, setTotalStats] = useState({ cancelled: 0, returned: 0, withXml: 0 });
   const [loadProgress, setLoadProgress] = useState('');
@@ -78,7 +80,7 @@ export default function App() {
         const strTo = new Date(currentToMs).toLocaleDateString('pt-BR');
         setLoadProgress(`Buscando de ${strFrom} até ${strTo}...`);
 
-        const data = await fetchCancelledReturnedOrders(timeFrom, timeTo, statusFilter);
+        const data = await fetchOrders(timeFrom, timeTo);
         allResultOrders.push(...(data.orders || []));
 
         currentFromMs = currentToMs + 1000;
@@ -105,10 +107,11 @@ export default function App() {
 
       setOrders(result);
 
-      const cancelled = result.filter(o => o.status === 'CANCELLED').length;
-      const returned = result.filter(o => o.status === 'RETURNED' || o.status === 'COMPLETED').length;
+      const cancelled = result.filter(o => o.orderType === 'CANCELLED').length;
+      const returned = result.filter(o => o.orderType === 'RETURNED').length;
+      const deliveryFailed = result.filter(o => o.orderType === 'DELIVERY_FAILED').length;
       const withXml = result.filter(o => o.hasXml).length;
-      setTotalStats({ cancelled, returned, withXml });
+      setTotalStats({ cancelled, returned, deliveryFailed, withXml });
 
       showToast(`${result.length} pedidos encontrados`, 'success');
       setLoadProgress('');
@@ -118,6 +121,34 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Filtros locais (sem nova chamada API)
+  let displayedOrders = orders;
+
+  // Filtro por tipo de pedido (orderType classificado pelo backend)
+  if (statusFilter !== 'ALL') {
+    displayedOrders = displayedOrders.filter(o => o.orderType === statusFilter);
+  }
+
+  // Filtro por status da devolução
+  if (returnStatusFilter !== 'ALL') {
+    displayedOrders = displayedOrders.filter(o => {
+      const st = o.returnInfo?.status;
+      if (!st) return false;
+      if (returnStatusFilter === 'ANALYSIS') return ['REQUESTED', 'JUDGING', 'PROCESSING'].includes(st);
+      if (returnStatusFilter === 'RETURNING') return ['ACCEPTED'].includes(st);
+      if (returnStatusFilter === 'REFUND_PAID') return ['ACCEPTED', 'REFUND_PAID'].includes(st);
+      if (returnStatusFilter === 'APPROVED') return ['ACCEPTED', 'REFUND_PAID', 'CLOSED'].includes(st);
+      if (returnStatusFilter === 'DISPUTE') return ['SELLER_DISPUTE'].includes(st);
+      if (returnStatusFilter === 'CANCELLED') return ['CANCELLED'].includes(st);
+      return false;
+    });
+  }
+
+  // Filtro por motivo da devolução
+  if (returnReasonFilter !== 'ALL') {
+    displayedOrders = displayedOrders.filter(o => o.returnInfo?.reason === returnReasonFilter);
   }
 
   async function handleSyncSefaz() {
@@ -144,12 +175,12 @@ export default function App() {
   }
 
   function handleSelectCount(count) {
-    const selectable = orders.filter(o => o.invoiceData?.accessKey);
+    const selectable = displayedOrders.filter(o => o.invoiceData?.accessKey);
     setSelectedOrders(new Set(selectable.slice(0, count).map(o => o.orderSn)));
   }
 
   function handleSelectNext(count) {
-    const selectable = orders.filter(o => o.invoiceData?.accessKey);
+    const selectable = displayedOrders.filter(o => o.invoiceData?.accessKey);
     const selectableSns = selectable.map(o => o.orderSn);
     
     // Find the last selected index
@@ -169,7 +200,7 @@ export default function App() {
   }
 
   function handleSelectAll() {
-    const selectable = orders.filter(o => o.invoiceData?.accessKey);
+    const selectable = displayedOrders.filter(o => o.invoiceData?.accessKey);
     if (selectedOrders.size === selectable.length) {
       setSelectedOrders(new Set());
     } else {
@@ -218,8 +249,10 @@ export default function App() {
     }
   }
 
-  const selectableOrders = orders.filter(o => o.invoiceData?.accessKey); // Only orders with accessKey can be downloaded
+  const selectableOrders = displayedOrders.filter(o => o.invoiceData?.accessKey); // Only orders with accessKey can be downloaded
   const allSelected = selectableOrders.length > 0 && selectedOrders.size === selectableOrders.length;
+
+  // displayedOrders logic moved up
 
   return (
     <div className="app">
@@ -249,11 +282,38 @@ export default function App() {
               />
             </div>
             <div className="search-field">
-              <label>Status</label>
+              <label>Status do Pedido</label>
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                 <option value="ALL">Todos</option>
+                <option value="COMPLETED">Concluídos</option>
                 <option value="CANCELLED">Cancelados</option>
                 <option value="RETURNED">Devolvidos</option>
+                <option value="DELIVERY_FAILED">Falhas de Entrega</option>
+              </select>
+            </div>
+            <div className="search-field">
+              <label>Status Devolução</label>
+              <select value={returnStatusFilter} onChange={e => setReturnStatusFilter(e.target.value)}>
+                <option value="ALL">Todos</option>
+                <option value="ANALYSIS">Em análise pela Shopee</option>
+                <option value="RETURNING">Em devolução</option>
+                <option value="APPROVED">Aprovadas</option>
+                <option value="REFUND_PAID">Reembolso Pago</option>
+                <option value="DISPUTE">Em disputa</option>
+                <option value="CANCELLED">Canceladas</option>
+              </select>
+            </div>
+            <div className="search-field">
+              <label>Motivo</label>
+              <select value={returnReasonFilter} onChange={e => setReturnReasonFilter(e.target.value)}>
+                <option value="ALL">Todos</option>
+                <option value="CHANGE_MIND">Arrependimento</option>
+                <option value="WRONG_ITEM">Item Errado</option>
+                <option value="FUNCTIONAL_DMG">Dano Funcional</option>
+                <option value="ITEM_MISSING">Item Faltando</option>
+                <option value="NOT_RECEIPT">Não Recebido</option>
+                <option value="PHYSICAL_DMG">Dano Físico</option>
+                <option value="DAMAGED_OTHERS">Outros Danos</option>
               </select>
             </div>
             <div className="search-field">
@@ -319,6 +379,10 @@ export default function App() {
                 <div className="stat-card-value warning">{totalStats.returned}</div>
               </div>
               <div className="stat-card">
+                <div className="stat-card-label">Falhas Entrega</div>
+                <div className="stat-card-value danger">{totalStats.deliveryFailed}</div>
+              </div>
+              <div className="stat-card">
                 <div className="stat-card-label">Com XML</div>
                 <div className="stat-card-value accent">{totalStats.withXml}</div>
               </div>
@@ -370,7 +434,7 @@ export default function App() {
             )}
 
             <OrderList
-              orders={orders}
+              orders={displayedOrders}
               selectedOrders={selectedOrders}
               onToggle={handleToggleOrder}
               onDownloadXml={handleDownloadXml}

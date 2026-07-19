@@ -3,8 +3,6 @@ plugins {
     id("com.google.devtools.ksp")
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.room)
-    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -50,11 +48,17 @@ kotlin {
     }
 }
 
-room {
-    schemaDirectory("$projectDir/schemas")
-}
-
 dependencies {
+    // Módulo compartilhado — NetworkDiscovery, NetworkMonitor, NetworkConfig,
+    // FallbackUrlInterceptor, NetworkPreferences. Integração feita em 2026-07-02
+    // para unificar a lógica de URL (user LAN cloudflare) entre os 3 apps RayShopee.
+    // O :rayshopee-core exporta OkHttp via `api(...)` — o PedidosEditProduto ainda
+    // usa HttpURLConnection em OrdersRepositoryImpl, mas passa a ter NetworkConfig
+    // disponível para evolução futura (LAN discovery + fallback transparente).
+    // Referência por coordinate porque rayshopee-core é composite build (includeBuild)
+    // — ver settings.gradle.kts.
+    implementation("com.rayshopee:core")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -67,31 +71,13 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.navigation.compose)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
-    implementation(libs.retrofit)
-    implementation(libs.retrofit.converter.kotlinx)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(platform(libs.okhttp.bom))
-    implementation(libs.okhttp)
-    implementation(libs.okhttp.logging)
-
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
-
-    implementation(libs.room.runtime)
-    implementation(libs.room.ktx)
-    ksp(libs.room.compiler)
-
-    implementation(libs.camerax.core)
-    implementation(libs.camerax.camera2)
-    implementation(libs.camerax.lifecycle)
-    implementation(libs.camerax.view)
-    implementation(libs.mlkit.barcode)
 
     debugImplementation(libs.androidx.ui.tooling)
 }

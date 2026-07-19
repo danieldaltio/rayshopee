@@ -1,9 +1,31 @@
 import React from 'react';
 import { formatDate, formatCurrency } from '../utils/format.js';
 
+const returnStatusMap = {
+  'REQUESTED': 'Em análise pela Shopee',
+  'JUDGING': 'Em análise pela Shopee',
+  'PROCESSING': 'Em análise pela Shopee',
+  'ACCEPTED': 'Reembolso Pago',
+  'REFUND_PAID': 'Reembolso Pago',
+  'CLOSED': 'Fechada',
+  'SELLER_DISPUTE': 'Em disputa',
+  'CANCELLED': 'Cancelada'
+};
+
+const returnReasonMap = {
+  'CHANGE_MIND': 'Arrependimento',
+  'WRONG_ITEM': 'Item Errado',
+  'FUNCTIONAL_DMG': 'Dano Funcional',
+  'ITEM_MISSING': 'Item Faltando',
+  'NOT_RECEIPT': 'Não Recebido',
+  'PHYSICAL_DMG': 'Dano Físico',
+  'DAMAGED_OTHERS': 'Outros Danos'
+};
+
 export default function OrderCard({ order, selected, onToggle, onDownloadXml, downloadingXml }) {
-  const isCancelled = order.status === 'CANCELLED';
-  const isReturned = order.status === 'RETURNED' || order.status === 'COMPLETED';
+  const isDeliveryFailed = order.orderType === 'DELIVERY_FAILED';
+  const isCancelled = order.orderType === 'CANCELLED';
+  const isReturned = order.orderType === 'RETURNED';
 
   return (
     <div className={`order-card ${selected ? 'selected' : ''}`}>
@@ -17,14 +39,32 @@ export default function OrderCard({ order, selected, onToggle, onDownloadXml, do
 
       <div className="order-content">
         <div className="order-header">
-          <span className="order-sn">#{order.orderSn}</span>
+          <div className="order-ids" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <span className="order-sn" style={{ fontSize: '15px', fontWeight: 'bold' }}>ID do Pedido: {order.orderSn}</span>
+            {order.returnInfo?.return_sn && (
+              <span className="return-sn" style={{ fontSize: '13px', color: '#e63946', fontWeight: 'bold' }}>
+                ID da Solicitação: {order.returnInfo.return_sn}
+              </span>
+            )}
+          </div>
           <div className="order-badges">
+            {isDeliveryFailed && <span className="badge badge-cancelled">Falha de Entrega</span>}
             {isCancelled && <span className="badge badge-cancelled">Cancelado</span>}
             {isReturned && <span className="badge badge-returned">Devolvido</span>}
             {order.hasXml ? (
               <span className="badge badge-xml">XML</span>
             ) : (
               <span className="badge badge-noxml">Sem XML</span>
+            )}
+            {order.returnInfo && (
+              <>
+                <span className={`badge badge-return-status ${order.returnInfo.status === 'CANCELLED' ? 'badge-cancelled' : 'badge-returned'}`} title={`Status da Solicitação: ${order.returnInfo.status}`}>
+                  {returnStatusMap[order.returnInfo.status] || order.returnInfo.status}
+                </span>
+                <span className="badge badge-return-reason" title={order.returnInfo.text_reason || 'Motivo da Devolução'}>
+                  {returnReasonMap[order.returnInfo.reason] || order.returnInfo.reason}
+                </span>
+              </>
             )}
           </div>
         </div>

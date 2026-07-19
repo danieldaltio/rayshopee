@@ -1,15 +1,17 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
-    id("com.android.application")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.hilt)
     id("com.google.devtools.ksp")
-    id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.room)
 }
+
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 android {
     namespace = "com.shopeelister"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.shopeelister"
@@ -38,8 +40,6 @@ android {
         buildConfig = true
     }
 
-
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -52,75 +52,90 @@ kotlin {
     }
 }
 
-dependencies {
-    // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
-    implementation(composeBom)
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material:material-icons-extended")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+// Room schema location (obrigatório desde Room 2.7+). O Room plugin exige
+// esta DSL mesmo quando `exportSchema = false` no @Database. Apontamos pra
+// `app/schemas/` (convenção padrão Room, gitignored).
+room {
+    schemaDirectory("$projectDir/schemas")
+}
 
-    // Core
-    implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
-    implementation("androidx.activity:activity-compose:1.9.0")
+dependencies {
+    // Módulo compartilhado (rayshopee-core): NetworkDiscovery, NetworkMonitor,
+    // NetworkConfig, FallbackUrlInterceptor, NetworkPreferences. Extraído em
+    // 2026-07-02 pra evitar duplicação entre apps. Referência por coordinate
+    // porque rayshopee-core é composite build (includeBuild) — ver settings.gradle.kts.
+    implementation("com.rayshopee:core")
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.activity.compose)
+
+    // Compose
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.material.icons.extended)
+    debugImplementation(libs.androidx.ui.tooling)
 
     // Navigation
-    implementation("androidx.navigation:navigation-compose:2.7.7")
+    implementation(libs.androidx.navigation.compose)
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.59.2")
-    ksp("com.google.dagger:hilt-compiler:2.59.2")
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
 
-    // ML Kit Barcode
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-
-    // CameraX
-    implementation("androidx.camera:camera-core:1.3.4")
-    implementation("androidx.camera:camera-camera2:1.3.4")
-    implementation("androidx.camera:camera-lifecycle:1.3.4")
-    implementation("androidx.camera:camera-view:1.3.4")
-
-    // Gemini AI SDK
-    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
-
-    // Retrofit + OkHttp
-    implementation("com.squareup.retrofit2:retrofit:2.11.0")
-    implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-
-    // Moshi
-    implementation("com.squareup.moshi:moshi:1.15.1")
-    implementation("com.squareup.moshi:moshi-kotlin:1.15.1")
-    ksp("com.squareup.moshi:moshi-kotlin-codegen:1.15.1")
-    implementation("org.jsoup:jsoup:1.17.2")
-
-    // Room
-    implementation("androidx.room:room-runtime:2.8.4")
-    implementation("androidx.room:room-ktx:2.8.4")
-    ksp("androidx.room:room-compiler:2.8.4")
-
-    // DataStore
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-
-    // Coil
-    implementation("io.coil-kt:coil-compose:2.6.0")
-
-    // Accompanist Permissions
-    implementation("com.google.accompanist:accompanist-permissions:0.34.0")
+    // Retrofit + kotlinx-serialization (sem Moshi — alinhado com o core)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.kotlinx)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(platform(libs.okhttp.bom))
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.android)
 
-    // Gson (for Shopee API body parsing)
-    implementation("com.google.code.gson:gson:2.11.0")
+    // Room
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+
+    // CameraX + ML Kit Barcode
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.mlkit.barcode)
+
+    // DataStore
+    implementation(libs.datastore.preferences)
+
+    // Coil
+    implementation(libs.coil.compose)
+
+    // Accompanist Permissions
+    implementation(libs.accompanist.permissions)
+
+    // Gemini AI SDK
+    implementation(libs.gemini.ai)
+
+    // Gson (Shopee API body parsing legado)
+    implementation(libs.gson)
+
+    // Jsoup
+    implementation(libs.jsoup)
 
     // Cloudinary Android SDK
-    implementation("com.cloudinary:cloudinary-android:3.1.2")
+    implementation(libs.cloudinary.android)
+
+    // WorkManager
+    implementation(libs.work.runtime.ktx)
 }

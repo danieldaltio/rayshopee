@@ -27,9 +27,10 @@ class SyncWorker @AssistedInject constructor(
             var allSuccess = true
             for (action in pendingActions) {
                 val kotlinResult: kotlin.Result<Unit> = when (action.actionType) {
-                    "UPDATE_PRICE" -> repository.updatePrice(action.itemId, action.variationId, action.value)
-                    "UPDATE_STOCK" -> repository.updateStock(action.itemId, action.variationId, action.value.toInt())
-                    "UPDATE_COST" -> repository.updateCost(action.itemId, action.variationId, action.value)
+                    // fromQueue=true impede o repo de criar pendência duplicada
+                    "UPDATE_PRICE" -> repository.updatePrice(action.itemId, action.variationId, action.value, fromQueue = true)
+                    "UPDATE_STOCK" -> repository.updateStock(action.itemId, action.variationId, action.value.toInt(), fromQueue = true)
+                    "UPDATE_COST" -> repository.updateCost(action.itemId, action.variationId, action.value, fromQueue = true)
                     else -> kotlin.Result.failure(Exception("Unknown action type"))
                 }
 

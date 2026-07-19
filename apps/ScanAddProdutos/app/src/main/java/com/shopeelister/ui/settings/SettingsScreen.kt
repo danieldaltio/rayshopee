@@ -41,6 +41,20 @@ fun SettingsScreen(
         if (state.saved) onBack()
     }
 
+    // Lista local de rascunho (evita gravar a cada keystroke). Começa com 2 campos
+    // vazios e é sincronizada com o state persistido sempre que abrir Settings.
+    var draftUrls by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        // Snapshot inicial: usa o que já tá salvo OU 2 campos vazios.
+        draftUrls = state.serverUrls.ifEmpty { listOf("", "") }
+    }
+    // Re-sync se o VM mudar fora (ex.: importFromRayShopee() atualizou).
+    LaunchedEffect(state.serverUrls) {
+        if (state.serverUrls.isNotEmpty() && state.serverUrls != draftUrls.filter { it.isNotBlank() }) {
+            draftUrls = state.serverUrls
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -72,13 +86,83 @@ fun SettingsScreen(
             // Shopee Section
             // Connection Section
             SectionHeader("Conexão e Backend")
-            OutlinedTextField(
-                value = state.serverUrl,
-                onValueChange = { viewModel.updateServerUrl(it) },
-                label = { Text("URL do Servidor RayShopee") },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("https://xxx.ngrok-free.dev") }
+            Text(
+                "Adicione uma ou mais URLs na ordem de prioridade (a 1ª é a " +
+                "mais rápida). Deixe vazio para usar só descoberta automática " +
+                "(LAN) + Cloudflare.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            draftUrls.forEachIndexed { index, url ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${index + 1}.",
+                        modifier = Modifier.padding(end = 8.dp),
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = { newValue ->
+                            // Atualiza draft local + VM (rascunho)
+                            val updated = draftUrls.toMutableList()
+                            while (updated.size <= index) updated.add("")
+                            updated[index] = newValue
+                            draftUrls = updated
+                            viewModel.updateServerUrlAt(index, newValue)
+                        },
+                        label = {
+                            Text(
+                                when (index) {
+                                    0 -> "URL 1 (principal)"
+                                    1 -> "URL 2 (fallback)"
+                                    else -> "URL $index (fallback)"
+                                }
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                when (index) {
+                                    0 -> "http://192.168.15.2:3003"
+                                    else -> "https://xxx.ngrok-free.dev"
+                                },
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    if (draftUrls.size > 1) {
+                        IconButton(
+                            onClick = {
+                                val updated = draftUrls.toMutableList()
+                                updated.removeAt(index)
+                                draftUrls = updated
+                                viewModel.removeServerUrlField(index)
+                            }
+                        ) {
+                            Icon(Icons.Default.Close, "Remover URL ${index + 1}")
+                        }
+                    }
+                }
+            }
+
+            if (draftUrls.size < 5) {
+                OutlinedButton(
+                    onClick = {
+                        draftUrls = draftUrls + ""
+                        viewModel.addServerUrlField()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Add, null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Adicionar URL")
+                }
+            }
 
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
@@ -193,18 +277,24 @@ fun SettingsScreen(
 
             HorizontalDivider()
 
-            // Groq Section
-            SectionHeader("Groq AI (Llama 3.3)")
+            // AI Provider Section — Gemini 2.5 Flash (free tier, 1500 req/dia, 1M context)
+            // Substitui o Groq legado (modelo descontinuado em 2026-08-16).
+            SectionHeader("Google Gemini AI (2.5 Flash)")
             OutlinedTextField(
-                value = state.groqKey,
-                onValueChange = { viewModel.updateGroqKey(it) },
-                label = { Text("Groq API Key") },
+                value = state.geminiKey,
+                onValueChange = { viewModel.updateGeminiKey(it) },
+                label = { Text("Gemini API Key") },
+                placeholder = { Text("Cole sua chave de aistudio.google.com/apikey") },
                 modifier = Modifier.fillMaxWidth(),
                 visualTransformation = if (showKeys) VisualTransformation.None
                 else PasswordVisualTransformation()
             )
-
-            HorizontalDivider()
+            Text(
+                text = "Gera grátis em aistudio.google.com/apikey • 1500 req/dia • 1M context",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+            )
 
             HorizontalDivider()
 

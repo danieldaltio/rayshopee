@@ -12,6 +12,29 @@ data class Product(
     @Transient val lastSyncedAt: Long = 0L
 )
 
+/**
+ * Resultado de busca ampla (por nome / SKU / EAN).
+ *
+ * Diferente de [Product], que representa um produto JÁ carregado com todas
+ * as variações prontas pra editar, este é só um "card de listagem" — UI
+ * mostra vários e o usuário toca num pra abrir o detalhe (que aí sim vira
+ * um [Product] via [searchByItemId]).
+ *
+ * NÃO é @Serializable porque a serialização é feita pela response do
+ * repositório (camada de rede) — aqui é só modelo de domínio.
+ */
+data class ProductSearchResult(
+    val itemId: String,
+    val modelId: Long,
+    val name: String,
+    val variation: String,
+    val sku: String,
+    val price: Double,
+    val stock: Int,
+    val cost: Double,
+    val image: String = ""
+)
+
 @Serializable
 data class ProductVariation(
     val variationId: String = "",
@@ -38,7 +61,7 @@ data class UpdateStockRequest(
 
 @Serializable
 data class UpdateCostRequest(
-    val item_id: String,
-    val model_id: String,
+    val itemId: String,        // 🆕 camelCase (era snake_case, alinhado com Price/Stock em 2026-07-18 — P7 resolvido)
+    val modelId: String,       // 🆕
     val cost: Double
 )
