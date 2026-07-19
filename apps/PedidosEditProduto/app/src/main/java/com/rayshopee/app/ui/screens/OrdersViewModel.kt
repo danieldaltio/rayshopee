@@ -1,5 +1,7 @@
 package com.rayshopee.app.ui.screens
 
+import android.content.Context
+import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rayshopee.app.data.repository.OrdersRepository
@@ -7,14 +9,18 @@ import com.rayshopee.app.orders.OrdersResponse
 import com.rayshopee.app.orders.OrdersResponseItem
 import com.rayshopee.core.network.NetworkConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
+import java.util.Calendar
 import javax.inject.Inject
 
 /**
@@ -43,8 +49,90 @@ data class OrdersUiState(
     val detailedError: String? = null,
     val editingItem: EditingTarget? = null,
     /** Mapa de preços alterados nesta sessão: chave "itemId:modelId" → novo preço */
-    val updatedPrices: Map<String, Double> = emptyMap()
+    val updatedPrices: Map<String, Double> = emptyMap(),
+    /** Filtro de status selecionado. null = Todos */
+    val selectedStatusFilter: String? = null,
+    /** Filtro de período selecionado. null = Todos os períodos */
+    val selectedTimeFilter: TimeFilterOption? = null,
+    /** Se true, dados de escrow estão sendo carregados em background */
+    val isLoadingEscrow: Boolean = false,
+    /** Porcentagem de imposto sobre faturamento (configurável em Settings) */
+    val taxPercentage: Double = 7.0
 )
+
+/**
+ * Opções de filtro por período.
+ * Cada opção calcula um par (startTimeMillis, endTimeMillis) relativo à data atual.
+ */
+enum class TimeFilterOption(val label: String) {
+    CURRENT_WEEK("Semana Atual"),
+    CURRENT_MONTH("Mês Atual"),
+    LAST_MONTH("Mês Anterior"),
+    LAST_30_DAYS("Últimos 30 Dias"),
+    LAST_90_DAYS("Últimos 90 Dias");
+
+    /** Calcula o intervalo de tempo (startMillis, endMillis) para este filtro. */
+    fun getDateRange(): Pair<Long, Long> {
+        val cal = Calendar.getInstance()
+        val now = cal.timeInMillis
+
+        return when (this) {
+            CURRENT_WEEK -> {
+                // Segunda-feira da semana atual até domingo
+                cal.set(Calendar.DAY_OF_WEEK, cal.firstDayOfWeek)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val start = cal.timeInMillis
+                cal.add(Calendar.DAY_OF_WEEK, 7)
+                val end = cal.timeInMillis
+                start to end
+            }
+            CURRENT_MONTH -> {
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val start = cal.timeInMillis
+                cal.add(Calendar.MONTH, 1)
+                val end = cal.timeInMillis
+                start to end
+            }
+            LAST_MONTH -> {
+                cal.add(Calendar.MONTH, -1)
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val start = cal.timeInMillis
+                cal.add(Calendar.MONTH, 1)
+                val end = cal.timeInMillis
+                start to end
+            }
+            LAST_30_DAYS -> {
+                cal.add(Calendar.DAY_OF_YEAR, -30)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val start = cal.timeInMillis
+                start to now
+            }
+            LAST_90_DAYS -> {
+                cal.add(Calendar.DAY_OF_YEAR, -90)
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                val start = cal.timeInMillis
+                start to now
+            }
+        }
+    }
+}
 
 /**
  * Item selecionado para edição (dialog aberto).
@@ -71,6 +159,9 @@ sealed interface OrdersIntent {
     /** Persiste a lista de URLs configuradas pelo usuário (Settings). */
     data class SetUserUrls(val urls: List<String>) : OrdersIntent
     data object DismissError : OrdersIntent
+    data class FilterByStatus(val status: String?) : OrdersIntent
+    data class FilterByTime(val timeFilter: TimeFilterOption?) : OrdersIntent
+    data class SetTaxPercentage(val percentage: Double) : OrdersIntent
 }
 
 /**
@@ -106,10 +197,16 @@ sealed interface OrdersIntent {
 @HiltViewModel
 class OrdersViewModel @Inject constructor(
     private val ordersRepository: OrdersRepository,
-    private val networkConfig: NetworkConfig
+    private val networkConfig: NetworkConfig,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(OrdersUiState())
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+
+    private val _uiState = MutableStateFlow(OrdersUiState(
+        taxPercentage = prefs.getFloat("tax_percentage", 7.0f).toDouble()
+    ))
     val uiState: StateFlow<OrdersUiState> = _uiState.asStateFlow()
 
     init {
@@ -154,16 +251,65 @@ class OrdersViewModel @Inject constructor(
             is OrdersIntent.DismissError -> _uiState.update {
                 it.copy(errorMessage = null, detailedError = null)
             }
+            is OrdersIntent.FilterByStatus -> _uiState.update {
+                it.copy(selectedStatusFilter = intent.status)
+            }
+            is OrdersIntent.FilterByTime -> {
+                _uiState.update { it.copy(selectedTimeFilter = intent.timeFilter) }
+                refresh()
+            }
+            is OrdersIntent.SetTaxPercentage -> {
+                prefs.edit().putFloat("tax_percentage", intent.percentage.toFloat()).apply()
+                _uiState.update { it.copy(taxPercentage = intent.percentage) }
+            }
         }
     }
 
+    /** Pedidos filtrados pelo status E período selecionados. */
+    val filteredOrders: StateFlow<List<OrdersResponse>> = _uiState
+        .map { ui ->
+            val statusFilter = ui.selectedStatusFilter
+            val timeFilter = ui.selectedTimeFilter
+
+            ui.orders.filter { order ->
+                // Filtro por status
+                val matchesStatus = statusFilter == null || order.status == statusFilter
+                // Filtro por período
+                val matchesTime = if (timeFilter == null) true
+                else {
+                    val (start, end) = timeFilter.getDateRange()
+                    order.createTime in start until end
+                }
+                matchesStatus && matchesTime
+            }
+        }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
     private fun refresh() {
         val url = _uiState.value.currentBaseUrl
+        val timeFilter = _uiState.value.selectedTimeFilter
+
+        val timeFrom: Long? = timeFilter?.getDateRange()?.let { it.first / 1000 }
+        val timeTo: Long? = timeFilter?.getDateRange()?.let { it.second / 1000 }
+
         _uiState.update { it.copy(isLoading = true, errorMessage = null, detailedError = null) }
         viewModelScope.launch {
-            ordersRepository.fetchOrdersToShip(url)
+            // FASE 1: Carregamento rápido SEM escrow — dados aparecem na hora
+            ordersRepository.fetchOrdersToShip(url, timeFrom, timeTo, skipEscrow = true)
                 .onSuccess { orders ->
                     _uiState.update { it.copy(isLoading = false, orders = orders) }
+
+                    // FASE 2: Carregamento em background COM escrow — atualiza cards concluídos
+                    launch {
+                        _uiState.update { it.copy(isLoadingEscrow = true) }
+                        ordersRepository.fetchOrdersToShip(url, timeFrom, timeTo, skipEscrow = false)
+                            .onSuccess { ordersWithEscrow ->
+                                _uiState.update { it.copy(isLoadingEscrow = false, orders = ordersWithEscrow) }
+                            }
+                            .onFailure {
+                                _uiState.update { it.copy(isLoadingEscrow = false) }
+                            }
+                    }
                 }
                 .onFailure { e ->
                     val isHtml = e.message?.contains("<!DOCTYPE", ignoreCase = true) == true ||

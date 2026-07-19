@@ -42,7 +42,11 @@ data class OrdersResponse(
     val shippingCarrier: String,
     val items: List<OrdersResponseItem>,
     val orderCost: Double,
-    val predictedProfit: Double
+    val predictedProfit: Double,
+    val escrowAmount: Double? = null,
+    val shopeeCommission: Double? = null,
+    val shopeeTransactionFee: Double? = null,
+    val actualShippingFee: Double? = null
 )
 
 /**
@@ -103,7 +107,11 @@ private fun parseOrder(o: JSONObject): OrdersResponse {
         shippingCarrier = o.optString("shippingCarrier", ""),
         items = items,
         orderCost = o.optDouble("orderCost", 0.0),
-        predictedProfit = o.optDouble("predictedProfit", 0.0)
+        predictedProfit = o.optDouble("predictedProfit", 0.0),
+        escrowAmount = o.opt("escrowAmount")?.let { if (it is Number) it.toDouble() else null },
+        shopeeCommission = o.opt("shopeeCommission")?.let { if (it is Number) it.toDouble() else null },
+        shopeeTransactionFee = o.opt("shopeeTransactionFee")?.let { if (it is Number) it.toDouble() else null },
+        actualShippingFee = o.opt("actualShippingFee")?.let { if (it is Number) it.toDouble() else null }
     )
 }
 

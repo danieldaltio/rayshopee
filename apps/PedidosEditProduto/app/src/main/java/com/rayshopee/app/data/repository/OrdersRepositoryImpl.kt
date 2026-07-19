@@ -62,14 +62,24 @@ class OrdersRepositoryImpl @Inject constructor() : OrdersRepository {
     companion object {
         // Timeouts (em ms) — preservados do código original pré-refatoração.
         private const val CONNECT_TIMEOUT_MS = 15_000
-        private const val READ_TIMEOUT_GET_MS = 30_000
+        private const val READ_TIMEOUT_GET_MS = 120_000
         private const val READ_TIMEOUT_POST_MS = 60_000
     }
 
-    override suspend fun fetchOrdersToShip(baseUrl: String): Result<List<OrdersResponse>> =
+    override suspend fun fetchOrdersToShip(
+        baseUrl: String,
+        timeFrom: Long?,
+        timeTo: Long?,
+        skipEscrow: Boolean
+    ): Result<List<OrdersResponse>> =
         withContext(Dispatchers.IO) {
             try {
-                val url = "$baseUrl/api/orders/to-ship"
+                val queryParams = mutableListOf<String>()
+                if (timeFrom != null) queryParams.add("time_from=$timeFrom")
+                if (timeTo != null) queryParams.add("time_to=$timeTo")
+                if (skipEscrow) queryParams.add("skip_escrow=true")
+                val queryString = queryParams.joinToString("&")
+                val url = if (queryString.isNotEmpty()) "$baseUrl/api/orders/to-ship?$queryString" else "$baseUrl/api/orders/to-ship"
                 val conn = URL(url).openConnection() as HttpURLConnection
                 conn.connectTimeout = CONNECT_TIMEOUT_MS
                 conn.readTimeout = READ_TIMEOUT_GET_MS

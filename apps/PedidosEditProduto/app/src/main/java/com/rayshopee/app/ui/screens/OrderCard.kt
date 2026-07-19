@@ -37,6 +37,7 @@ import java.util.*
 fun OrderCardRefactored(
     order: OrdersResponse,
     updatedPrices: Map<String, Double> = emptyMap(),
+    taxPercentage: Double = 7.0,
     onEditItem: (OrdersResponseItem) -> Unit,
     onSyncItem: (String) -> Unit
 ) {
@@ -65,7 +66,7 @@ fun OrderCardRefactored(
                     shape = MaterialTheme.shapes.extraSmall
                 ) {
                     Text(
-                        text = order.status,
+                        text = translateStatus(order.status),
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White
@@ -118,6 +119,66 @@ fun OrderCardRefactored(
                         color = profitColor,
                         fontSize = 16.sp
                     )
+                }
+            }
+
+            // Escrow info (pedidos concluídos mostram valor real da Shopee + lucro real)
+            val escrow = order.escrowAmount
+            if (escrow != null && escrow > 0) {
+                Spacer(modifier = Modifier.height(6.dp))
+                val totalCost = order.items.sumOf { it.cost * it.quantity }
+                val imposto = order.totalAmount * (taxPercentage / 100.0)
+                val lucroReal = escrow - imposto - totalCost
+                val lucroRealColor = if (lucroReal > 0) Color(0xFF2E7D32) else Color.Red
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFE8F5E9).copy(alpha = 0.6f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("💰 Recebido Shopee", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                            Text(
+                                "R$ ${String.format("%.2f", escrow)}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF2E7D32)
+                            )
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 0.5.dp, color = Color(0xFFC8E6C9))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Imposto (${String.format("%.0f", taxPercentage)}%)", fontSize = 11.sp, color = Color.Gray)
+                            Text("-R$ ${String.format("%.2f", imposto)}", fontSize = 11.sp, color = Color.Red)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Custo Produtos", fontSize = 11.sp, color = Color.Gray)
+                            Text("-R$ ${String.format("%.2f", totalCost)}", fontSize = 11.sp, color = Color.Red)
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), thickness = 0.5.dp, color = Color(0xFFC8E6C9))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Lucro Real", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = lucroRealColor)
+                            Text(
+                                "R$ ${String.format("%.2f", lucroReal)}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = lucroRealColor
+                            )
+                        }
+                    }
                 }
             }
 

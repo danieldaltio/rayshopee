@@ -23,9 +23,17 @@ interface OrdersRepository {
      * Endpoint esperado: `GET {baseUrl}/api/orders/to-ship`
      *
      * @param baseUrl URL base configurável (ex.: ngrok)
+     * @param timeFrom Timestamp em segundos Unix do início do período (null = servidor usa padrão 15 dias)
+     * @param timeTo Timestamp em segundos Unix do fim do período (null = servidor usa agora)
+     * @param skipEscrow Se true, pula busca de escrow (carregamento rápido)
      * @return Result.success com lista de pedidos parseados, ou Result.failure com erro
      */
-    suspend fun fetchOrdersToShip(baseUrl: String): Result<List<OrdersResponse>>
+    suspend fun fetchOrdersToShip(
+        baseUrl: String,
+        timeFrom: Long? = null,
+        timeTo: Long? = null,
+        skipEscrow: Boolean = false
+    ): Result<List<OrdersResponse>>
 
     /**
      * Atualiza um valor de produto via POST genérico.

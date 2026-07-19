@@ -6,8 +6,10 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,8 +22,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -39,6 +43,38 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
  * [OrderCardRefactored] (card de pedido), [OrderItemRowRefactored] (linha de
  * item) e [EditProductDialogRefactored] (dialog de edição).
  */
+
+/** Lista de status disponíveis para filtro, na ordem de exibição. */
+private val STATUS_FILTER_OPTIONS = listOf(
+    null to "Todos",
+    "READY_TO_SHIP" to "Pronto p/ Enviar",
+    "PROCESSED" to "Processado",
+    "SHIPPED" to "Enviado",
+    "TO_CONFIRM_RECEIVE" to "Aguardando Confirmação",
+    "COMPLETED" to "Concluído",
+    "CANCELLED" to "Cancelado"
+)
+
+/** Lista de períodos disponíveis para filtro. */
+private val TIME_FILTER_OPTIONS = listOf(
+    null to "Todos os Períodos",
+    TimeFilterOption.CURRENT_WEEK to "Semana Atual",
+    TimeFilterOption.CURRENT_MONTH to "Mês Atual",
+    TimeFilterOption.LAST_MONTH to "Mês Anterior",
+    TimeFilterOption.LAST_30_DAYS to "Últimos 30 Dias",
+    TimeFilterOption.LAST_90_DAYS to "Últimos 90 Dias"
+)
+
+/** Traduz o nome interno do status para exibição em português. */
+fun translateStatus(status: String): String = when (status) {
+    "READY_TO_SHIP" -> "Pronto p/ Enviar"
+    "PROCESSED" -> "Processado"
+    "SHIPPED" -> "Enviado"
+    "TO_CONFIRM_RECEIVE" -> "Aguardando Confirmação"
+    "COMPLETED" -> "Concluído"
+    "CANCELLED" -> "Cancelado"
+    else -> status
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrdersScreenRefactored(
@@ -46,20 +82,18 @@ fun OrdersScreenRefactored(
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val filteredOrders by viewModel.filteredOrders.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Estado puramente UI (não persistido, não compartilhado entre telas).
-    // O dialog de Settings mantém um rascunho local (List<String>) até o usuário
-    // salvar — evita gravar em disco a cada keystroke.
     var showSettings by remember { mutableStateOf(false) }
-    // Começa com 2 campos vazios: 1º LAN local, 2º ngrok/cloudflare público.
-    // Se já existirem userUrls salvas, usa elas como ponto de partida.
     var tempUrls by remember { mutableStateOf<List<String>>(emptyList()) }
+    var tempTaxPercentage by remember { mutableStateOf(state.taxPercentage) }
 
-    // Sincroniza o rascunho com o estado persistido SEMPRE que o dialog abrir.
     LaunchedEffect(showSettings) {
         if (showSettings) {
             tempUrls = state.userUrls.ifEmpty { listOf("", "") }
+            tempTaxPercentage = state.taxPercentage
         }
     }
 
@@ -75,10 +109,13 @@ fun OrdersScreenRefactored(
         SettingsDialog(
             tempUrls = tempUrls,
             candidates = state.candidates,
+            tempTaxPercentage = tempTaxPercentage,
             onTempUrlsChange = { tempUrls = it },
+            onTempTaxPercentageChange = { tempTaxPercentage = it },
             onDismiss = { showSettings = false },
             onSave = {
                 viewModel.processIntent(OrdersIntent.SetUserUrls(tempUrls))
+                viewModel.processIntent(OrdersIntent.SetTaxPercentage(tempTaxPercentage))
                 showSettings = false
             }
         )
@@ -203,22 +240,195 @@ fun OrdersScreenRefactored(
             } else if (state.orders.isEmpty() && !state.isLoading) {
                 Text("Nenhum pedido encontrado", modifier = Modifier.align(Alignment.Center))
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    items(state.orders, key = { it.orderSn }) { order ->
-                        OrderCardRefactored(
-                            order = order,
-                            updatedPrices = state.updatedPrices,
-                            onEditItem = { item ->
-                                viewModel.processIntent(OrdersIntent.OpenEdit(item, order.orderSn))
-                            },
-                            onSyncItem = { itemId ->
-                                viewModel.processIntent(OrdersIntent.SyncItem(itemId))
-                            }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Filtro de período
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(TIME_FILTER_OPTIONS) { (timeValue, label) ->
+                            val isSelected = state.selectedTimeFilter == timeValue
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    if (!state.isLoading) {
+                                        viewModel.processIntent(OrdersIntent.FilterByTime(timeValue))
+                                    }
+                                },
+                                enabled = !state.isLoading,
+                                label = {
+                                    Text(
+                                        label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.tertiary,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onTertiary
+                                )
+                            )
+                        }
+                    }
+
+                    // Barra de filtros por status
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(STATUS_FILTER_OPTIONS) { (statusValue, label) ->
+                            val isSelected = state.selectedStatusFilter == statusValue
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    if (!state.isLoading) {
+                                        viewModel.processIntent(OrdersIntent.FilterByStatus(statusValue))
+                                    }
+                                },
+                                enabled = !state.isLoading,
+                                label = {
+                                    Text(
+                                        label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
+                        }
+                    }
+
+                    // Resumo financeiro dos pedidos filtrados
+                    val totalFaturamento = filteredOrders.sumOf { it.totalAmount }
+                    val totalLucro = filteredOrders.sumOf { it.predictedProfit }
+                    val totalRecebido = filteredOrders.mapNotNull { it.escrowAmount }.sum()
+                    val totalCusto = filteredOrders.sumOf { o -> o.items.sumOf { it.cost * it.quantity } }
+                    val totalImposto = totalFaturamento * (state.taxPercentage / 100.0)
+                    val totalLucroReal = if (totalRecebido > 0) totalRecebido - totalImposto - totalCusto else 0.0
+                    val lucroColor = if (totalLucro > 0) Color(0xFF2E7D32) else Color.Red
+                    val lucroRealColor = if (totalLucroReal > 0) Color(0xFF2E7D32) else Color.Red
+
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                         )
+                    ) {
+                        Column {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text("Faturamento", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                    Text(
+                                        "R$ ${String.format("%.2f", totalFaturamento)}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("Lucro Real", style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32))
+                                Text(
+                                    if (totalRecebido > 0) "R$ ${String.format("%.2f", totalLucroReal)}" else "R$ ${String.format("%.2f", totalLucro)}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = if (totalRecebido > 0) lucroRealColor else lucroColor
+                                )
+                            }
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text("Recebido", style = MaterialTheme.typography.labelSmall, color = Color(0xFF2E7D32))
+                                    Text(
+                                        if (totalRecebido > 0) "R$ ${String.format("%.2f", totalRecebido)}" else "---",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = Color(0xFF2E7D32)
+                                    )
+                                }
+                            }
+                            // Indicador de carregamento de escrow em background
+                            if (state.isLoadingEscrow) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(10.dp),
+                                        strokeWidth = 1.5.dp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "Carregando dados financeiros...",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Contador de pedidos filtrados
+                    val hasActiveFilter = state.selectedStatusFilter != null || state.selectedTimeFilter != null
+                    if (state.isLoading && hasActiveFilter) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(14.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Atualizando pedidos...",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else if (hasActiveFilter) {
+                        Text(
+                            "Mostrando ${filteredOrders.size} de ${state.orders.size} pedidos",
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(filteredOrders, key = { it.orderSn }) { order ->
+                            OrderCardRefactored(
+                                order = order,
+                                updatedPrices = state.updatedPrices,
+                                taxPercentage = state.taxPercentage,
+                                onEditItem = { item ->
+                                    viewModel.processIntent(OrdersIntent.OpenEdit(item, order.orderSn))
+                                },
+                                onSyncItem = { itemId ->
+                                    viewModel.processIntent(OrdersIntent.SyncItem(itemId))
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -245,20 +455,61 @@ fun OrdersScreenRefactored(
 fun SettingsDialog(
     tempUrls: List<String>,
     candidates: List<String>,
+    tempTaxPercentage: Double,
     onTempUrlsChange: (List<String>) -> Unit,
+    onTempTaxPercentageChange: (Double) -> Unit,
     onDismiss: () -> Unit,
     onSave: () -> Unit
 ) {
+    var taxText by remember { mutableStateOf(String.format("%.1f", tempTaxPercentage)) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Configurar Servidor") },
+        title = { Text("Configurações") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                // Seção: Impostos
                 Text(
-                    "Adicione uma ou mais URLs base na ordem que devem ser " +
+                    "💰 Impostos",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Porcentagem aplicada sobre o faturamento para calcular lucro real.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = taxText,
+                    onValueChange = { newValue ->
+                        taxText = newValue
+                        newValue.toDoubleOrNull()?.let { onTempTaxPercentageChange(it) }
+                    },
+                    label = { Text("Imposto sobre faturamento (%)") },
+                    placeholder = { Text("7.0") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    suffix = { Text("%") }
+                )
+
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                // Seção: URLs do Servidor
+                Text(
+                    "🌐 Servidor",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Adicione URLs base na ordem que devem ser " +
                     "tentadas. A primeira é a mais rápida; deixe vazio para " +
                     "usar só descoberta automática (LAN) + Cloudflare.",
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
