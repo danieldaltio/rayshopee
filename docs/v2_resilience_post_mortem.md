@@ -82,6 +82,21 @@ Após a implementação das 4 fases de resiliência (Monitoramento Sentry, Offli
   - `app/ui/screens/ScannerViewModel.kt` — rotina em background e gestão de estado `isOnline`
   - `app/ui/screens/ScannerScreen.kt` — indicador visual de status na TopAppBar
 
+### 7. Correção do Cron de Renovação do Token da Shopee
+- **Problema:** O cron `/api/cron/refresh-token` não funcionava:
+  - O agendamento estava no `vercel.json` da raiz, mas o projeto da Vercel usa o `server/vercel.json`, então o cron nunca era registrado.
+  - O cron renovava com o `SHOPEE_REFRESH_TOKEN` das variáveis de ambiente, que fica velho após a primeira renovação (a Shopee devolve um refresh token novo a cada renovação e a Vercel não consegue gravar no `.env`). Só o Supabase guarda o mais recente.
+  - O `catch` chamava `Sentry.captureException`, mas o Sentry já tinha sido removido.
+- **Ação:**
+  - O cron agora carrega o token mais recente do Supabase antes de renovar e não renova se o Supabase não puder ser lido (os tokens novos seriam perdidos).
+  - O agendamento foi movido para o `server/vercel.json` e passou a ser diário (`0 9 * * *`), que é o máximo permitido no plano Hobby da Vercel. O access token (4h) continua sendo renovado sob demanda pelo `ensureValidToken`; o cron diário serve para manter o refresh token (30 dias) vivo mesmo sem uso do app.
+  - Se o `CRON_SECRET` não estiver configurado, o endpoint responde 500 com a mensagem `CRON_SECRET not configured`.
+- **Requisito:** a variável `CRON_SECRET` precisa existir nas variáveis de ambiente do projeto na Vercel.
+- **Arquivos alterados:**
+  - `server/index.js` — função `loadTokensFromSupabase`, reaproveitada pelo `ensureValidToken` e pelo cron
+  - `server/vercel.json` — bloco `crons`
+  - `vercel.json` (raiz) — removido
+
 ---
 
 ## 🚀 Melhorias Possíveis

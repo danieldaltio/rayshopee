@@ -270,28 +270,37 @@ async function refreshAccessToken() {
 }
 
 /**
+ * Load the latest Shopee tokens saved in the Supabase Company table into memory.
+ * Returns the token expiry timestamp (ms, 0 if unknown), or null if no token is stored.
+ */
+async function loadTokensFromSupabase() {
+  const targetCnpj = process.env.SEFAZ_CNPJ || '44156548000109';
+  const { data: company, error } = await supabase
+    .from('Company')
+    .select('shopee_access_token, shopee_refresh_token, shopee_token_expires_at')
+    .eq('cnpj', targetCnpj)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!company || !company.shopee_access_token) return null;
+
+  accessToken = company.shopee_access_token;
+  refreshToken = company.shopee_refresh_token || refreshToken;
+  return company.shopee_token_expires_at ? new Date(company.shopee_token_expires_at).getTime() : 0;
+}
+
+/**
  * Ensure we have a valid access token before making API calls
  */
 async function ensureValidToken() {
   // If we don't have a token or it's expired, try to load from Supabase first
   if (tokenExpiresAt === 0 && supabase) {
     try {
-      const targetCnpj = process.env.SEFAZ_CNPJ || '44156548000109';
-      const { data: company } = await supabase
-        .from('Company')
-        .select('shopee_access_token, shopee_refresh_token, shopee_token_expires_at')
-        .eq('cnpj', targetCnpj)
-        .maybeSingle();
-      
-      if (company && company.shopee_access_token) {
-        accessToken = company.shopee_access_token;
-        refreshToken = company.shopee_refresh_token || refreshToken;
-        const dbExpires = company.shopee_token_expires_at ? new Date(company.shopee_token_expires_at).getTime() : 0;
-        if (dbExpires > Date.now()) {
-          tokenExpiresAt = dbExpires;
-          console.log('✅ Loaded valid token from Supabase');
-          return true;
-        }
+      const dbExpires = await loadTokensFromSupabase();
+      if (dbExpires > Date.now()) {
+        tokenExpiresAt = dbExpires;
+        console.log('✅ Loaded valid token from Supabase');
+        return true;
       }
     } catch (err) {
       console.warn('⚠️ Could not load token from Supabase:', err.message);
@@ -2953,12 +2962,25 @@ app.post('/api/products/add-gtin/:itemId', async (req, res) => {
 
 // Vercel Cron Job for decentralized Token Refresh
 app.get('/api/cron/refresh-token', async (req, res) => {
-  // Check CRON_SECRET for security
+  // Check CRON_SECRET for security (Vercel sends it as a Bearer token)
+  if (!process.env.CRON_SECRET) {
+    return res.status(500).json({ success: false, message: 'CRON_SECRET not configured' });
+  }
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).end('Unauthorized');
   }
-  
+  if (!supabase) {
+    return res.status(500).json({ success: false, message: 'Supabase not configured' });
+  }
+
   try {
+    // The cron usually runs on a cold start, where SHOPEE_REFRESH_TOKEN from the env is stale:
+    // Shopee returns a new refresh token on every refresh and only Supabase keeps the latest one.
+    // If Supabase can't be read, skip the refresh: the new tokens couldn't be saved and would be lost.
+    if ((await loadTokensFromSupabase()) === null) {
+      return res.status(500).json({ success: false, message: 'No Shopee token found in Supabase' });
+    }
+
     const success = await refreshAccessToken();
     if (success) {
       return res.status(200).json({ success: true, message: 'Token refreshed successfully via Cron' });
@@ -2966,7 +2988,7 @@ app.get('/api/cron/refresh-token', async (req, res) => {
       return res.status(500).json({ success: false, message: 'Failed to refresh token' });
     }
   } catch (error) {
-    Sentry.captureException(error);
+    console.error('  ❌ Cron token refresh error:', error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 });
